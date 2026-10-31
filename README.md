@@ -26,6 +26,10 @@ The dino changes lane once about 60% of your body's width is inside another lane
 
 Hands above the head jump once per raise: lower your hands to jump again. Body and hand controls both work at the same time, and so do the keys.
 
+## Difficulty
+
+The run gets harder as it goes: over 150 seconds the road speeds up from 300 to 600 px/s, obstacles come closer together, and double-lane rows get more common (LV 1 to LV 10 shown at the top). The dino's legs and tail speed up with it. The numbers are at the top of `js/game.js`.
+
 ## Keys
 
 | Action | Keys |

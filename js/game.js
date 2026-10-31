@@ -2,7 +2,25 @@ const LANES = [120, 240, 360];
 const PY = 590;                      // player's screen y
 const GRAVITY = 1800, JUMP_V = 640;
 const BLOCK_CLEAR = 30;              // must be at least this high to hop a block
-const START_SPEED = 300, ACCEL = 3;  // gentler than keyboard-only so body controls have time to react
+
+// Difficulty ramps linearly from the START values to the END values over RAMP_SECONDS, then holds.
+const RAMP_SECONDS = 150;
+const START_SPEED = 300, END_SPEED = 600;         // px/s the road scrolls; starts gentle so body controls have time to react
+const GAP_START = 2.0, GAP_END = 1.1;             // seconds between obstacle rows...
+const EXTRA_START = 1.0, EXTRA_END = 0.5;         // ...plus a random 0..this extra
+const TWO_LANE_START = 0.1, TWO_LANE_END = 0.3;   // chance a row blocks two lanes at once
+const lerp = (a, b, d) => a + (b - a) * d;
+
+export function difficultyAt(seconds) {
+  const d = Math.min(1, seconds / RAMP_SECONDS);
+  return {
+    d, level: 1 + Math.floor(d * 9),
+    speed: lerp(START_SPEED, END_SPEED, d),
+    gap: lerp(GAP_START, GAP_END, d),
+    extra: lerp(EXTRA_START, EXTRA_END, d),
+    twoLane: lerp(TWO_LANE_START, TWO_LANE_END, d),
+  };
+}
 
 // canStart() lets the app hold back a start request (e.g. until the camera is calibrated)
 export function createGame(canvas, { canStart = () => true } = {}) {
@@ -10,6 +28,7 @@ export function createGame(canvas, { canStart = () => true } = {}) {
   const W = canvas.width, H = canvas.height;
 
   let state = 'start', player, obstacles, score, speed, spawnIn, t = 0, scroll = 0;
+  let elapsed = 0, phase = 0;          // seconds into the run; run-cycle phase (advances faster as the dino speeds up)
   let best = +(localStorage.getItem('blip-td-best') || 0);
   const duckSources = {};              // keyboard and pose each hold their own duck flag
   const duckHeld = () => Object.values(duckSources).some(Boolean);
@@ -20,7 +39,7 @@ export function createGame(canvas, { canStart = () => true } = {}) {
 
   function reset() {
     player = newPlayer(); obstacles = [];
-    score = 0; speed = START_SPEED; spawnIn = 1.5; state = 'play';
+    score = 0; speed = START_SPEED; elapsed = 0; spawnIn = 1.5; state = 'play';
   }
   function start() { if (state !== 'play' && canStart()) reset(); }
 
@@ -44,14 +63,18 @@ export function createGame(canvas, { canStart = () => true } = {}) {
   const ducking = () => player.z === 0 && (duckHeld() || player.duckT > 0);
 
   function spawn() {
-    const lanes = [0, 1, 2].sort(() => Math.random() - 0.5).slice(0, Math.random() < 0.15 ? 2 : 1);
+    const dif = difficultyAt(elapsed);
+    const lanes = [0, 1, 2].sort(() => Math.random() - 0.5).slice(0, Math.random() < dif.twoLane ? 2 : 1);
     for (const l of lanes) obstacles.push({ lane: l, y: -60, kind: Math.random() < 0.45 ? 'beam' : 'block' });
-    spawnIn = Math.max(0.9, 2.0 - speed / 1000) + Math.random();
+    spawnIn = dif.gap + Math.random() * dif.extra;
   }
 
   function update(dt) {
     t += dt;
+    phase += dt * (state === 'play' ? speed / START_SPEED : 0.4);
     if (state !== 'play') { scroll += 40 * dt; return; }
+    elapsed += dt;
+    speed = difficultyAt(elapsed).speed;
     scroll += speed * dt;
 
     player.x += (LANES[player.lane] - player.x) * Math.min(1, dt * 18);
@@ -63,7 +86,6 @@ export function createGame(canvas, { canStart = () => true } = {}) {
       if (player.z <= 0) { player.z = 0; player.vz = 0; }
     }
 
-    speed += ACCEL * dt;
     score += speed * dt / 12;
     spawnIn -= dt;
     if (spawnIn <= 0) spawn();
@@ -115,8 +137,8 @@ export function createGame(canvas, { canStart = () => true } = {}) {
     ctx.beginPath(); ctx.ellipse(x, PY + 6, 20 * ss, 14 * ss, 0, 0, 7); ctx.fill();
 
     ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc);
-    const run = player.z === 0 && state === 'play' ? Math.sin(t * 22) : 0;
-    const wag = Math.sin(t * 9) * 7;
+    const run = player.z === 0 && state === 'play' ? Math.sin(phase * 22) : 0;   // legs and tail follow the speed
+    const wag = Math.sin(phase * 9) * 7;
     const body = duck ? '#3fc9a5' : '#5ef2c8', dark = '#2bb894';
     ctx.fillStyle = dark;                                     // tail, wagging
     ctx.beginPath(); ctx.moveTo(-9, 12); ctx.quadraticCurveTo(wag * 0.5, 24, wag, 38); ctx.quadraticCurveTo(wag * 0.5 + 3, 24, 9, 12); ctx.fill();
@@ -160,6 +182,8 @@ export function createGame(canvas, { canStart = () => true } = {}) {
     ctx.fillText(String(Math.floor(score)).padStart(5, '0'), W - 16, 30);
     ctx.fillStyle = '#8c82c8'; ctx.textAlign = 'left';
     ctx.fillText('HI ' + String(best).padStart(5, '0'), 16, 30);
+    ctx.fillStyle = '#ffd35e'; ctx.textAlign = 'center';
+    ctx.fillText(`LV ${difficultyAt(elapsed).level}`, W / 2, 30);
 
     ctx.textAlign = 'center';
     if (state === 'start') {

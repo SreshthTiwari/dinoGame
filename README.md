@@ -14,13 +14,15 @@ then open http://localhost:8000 and press Space. The browser will ask for camera
 
 ## Body controls
 
-Stand 2-3 m back with your whole body in view. After pressing Space, the calibration screen asks you to step into the LEFT, CENTER and RIGHT lane and hold still in each.
+Stand 2-3 m back with your whole body in view. After pressing Space, the calibration screen walks you through five steps, holding still for each: stand in the LEFT, CENTER and RIGHT lane, raise both hands above your head, then put both hands on your head.
 
 | Action | Body |
 |---|---|
 | Lane | stand in that lane |
-| Jump | jump (fires as you take off) |
-| Duck | squat |
+| Jump | jump (fires as you take off), or raise both hands above your head |
+| Duck | squat, or put both hands on your head (hold it) |
+
+Hands above the head jump once per raise: lower your hands to jump again. Body and hand controls both work at the same time, and so do the keys.
 
 ## Keys
 
@@ -33,7 +35,7 @@ Stand 2-3 m back with your whole body in view. After pressing Space, the calibra
 | Recalibrate camera | C (when not mid-run) |
 | Keyboard only | Esc |
 | Show/hide camera preview | V |
-| Show jump/duck debug numbers | D |
+| Show live jump/duck/hand numbers on the preview | D |
 
 Touch: swipe up = jump, down = duck, left/right = lane, tap = jump.
 

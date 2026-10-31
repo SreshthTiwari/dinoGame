@@ -45,7 +45,7 @@ function startCalibration() {
   mode = 'calibrating';
   calibrator = createCalibrator();
   controller = null;
-  ui.setMessage('Step into the LEFT lane');
+  ui.setMessage('(1/5) Step into the LEFT lane');
   ui.setProgress(0);
   ui.showBig();
 }
@@ -91,9 +91,10 @@ function pollPose(t) {
 
   if (mode === 'calibrating') {
     const s = calibrator.update(f, dt);
-    ui.setMessage(s.message);
+    ui.setMessage(s.done ? s.message : `(${s.step + 1}/${s.total}) ${s.message}`);
     ui.setProgress(s.progress);
-    drawPreview(overlay, video, landmarks, { labels: true, active: s.step, bounds: CONFIG.calEdges });
+    const lanes = s.step < 3;     // steps 3-4 are the hand gestures, where the lane bands would just be noise
+    drawPreview(overlay, video, landmarks, { bands: lanes, labels: lanes, active: s.step, bounds: CONFIG.calEdges });
     if (s.done) finishCalibration();
   } else if (mode === 'ready') {
     const act = controller.update(f, t);
@@ -106,7 +107,7 @@ function pollPose(t) {
     const d = controller.debug;
     drawPreview(overlay, video, landmarks, {
       bounds: cal.bounds, active: act.lane,
-      debug: debug ? `rise ${d.rise.toFixed(2)} drop ${d.drop.toFixed(2)}` : '',
+      debug: debug ? `rise ${d.rise.toFixed(2)} drop ${d.drop.toFixed(2)} up ${d.up.toFixed(2)}/${cal.handsUpMin.toFixed(2)} head ${d.dist.toFixed(2)}/${cal.onHeadMax.toFixed(2)}` : '',
     });
   }
 }

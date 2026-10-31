@@ -8,6 +8,23 @@
 </head>
 <body>
 <canvas id="c" width="480" height="720"></canvas>
+
+<div id="camBox" class="hidden">
+  <video id="cam" playsinline muted></video>
+  <canvas id="camOverlay"></canvas>
+</div>
+
+<div id="cal" class="hidden">
+  <div class="card">
+    <h2>Calibrate</h2>
+    <div id="calSlot"></div>
+    <p id="calMsg"></p>
+    <div class="bar"><div id="calBar"></div></div>
+    <p class="hint">Esc = skip and use the keyboard</p>
+  </div>
+</div>
+
+<div id="toast"></div>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

@@ -2,24 +2,27 @@ const LANES = [120, 240, 360];
 const PY = 590;                      // player's screen y
 const GRAVITY = 1800, JUMP_V = 640;
 const BLOCK_CLEAR = 30;              // must be at least this high to hop a block
+const START_SPEED = 300, ACCEL = 3;  // gentler than keyboard-only so body controls have time to react
 
-export function createGame(canvas) {
+// canStart() lets the app hold back a start request (e.g. until the camera is calibrated)
+export function createGame(canvas, { canStart = () => true } = {}) {
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
 
   let state = 'start', player, obstacles, score, speed, spawnIn, t = 0, scroll = 0;
   let best = +(localStorage.getItem('blip-td-best') || 0);
-  let duckHeld = false;
+  const duckSources = {};              // keyboard and pose each hold their own duck flag
+  const duckHeld = () => Object.values(duckSources).some(Boolean);
   const stars = Array.from({ length: 40 }, () => ({ x: Math.random() * W, y: Math.random() * H, s: Math.random() * 2 + 0.5 }));
 
   function newPlayer() { return { lane: 1, x: LANES[1], z: 0, vz: 0, duckT: 0 }; }
-  player = newPlayer(); obstacles = []; score = 0; speed = 380;
+  player = newPlayer(); obstacles = []; score = 0; speed = START_SPEED;
 
   function reset() {
     player = newPlayer(); obstacles = [];
-    score = 0; speed = 380; spawnIn = 1; state = 'play';
+    score = 0; speed = START_SPEED; spawnIn = 1.5; state = 'play';
   }
-  function start() { if (state !== 'play') reset(); }
+  function start() { if (state !== 'play' && canStart()) reset(); }
 
   function jump() {
     if (state !== 'play') return start();
@@ -29,17 +32,21 @@ export function createGame(canvas) {
     if (state !== 'play') return start();
     player.lane = Math.max(0, Math.min(2, player.lane + d));
   }
+  function setLane(lane) {
+    if (state === 'play') player.lane = Math.max(0, Math.min(2, lane));
+  }
   function duckFor(seconds) {
     if (state === 'play') player.duckT = seconds; else start();
   }
-  function setDuckHeld(held) { duckHeld = held; }
+  function setDuckHeld(held, source = 'keys') { duckSources[source] = held; }
+  const isPlaying = () => state === 'play';
 
-  const ducking = () => player.z === 0 && (duckHeld || player.duckT > 0);
+  const ducking = () => player.z === 0 && (duckHeld() || player.duckT > 0);
 
   function spawn() {
-    const lanes = [0, 1, 2].sort(() => Math.random() - 0.5).slice(0, Math.random() < 0.25 ? 2 : 1);
+    const lanes = [0, 1, 2].sort(() => Math.random() - 0.5).slice(0, Math.random() < 0.15 ? 2 : 1);
     for (const l of lanes) obstacles.push({ lane: l, y: -60, kind: Math.random() < 0.45 ? 'beam' : 'block' });
-    spawnIn = Math.max(0.5, 1.4 - speed / 1200) + Math.random() * 0.8;
+    spawnIn = Math.max(0.9, 2.0 - speed / 1000) + Math.random();
   }
 
   function update(dt) {
@@ -51,12 +58,12 @@ export function createGame(canvas) {
     player.duckT = Math.max(0, player.duckT - dt);
     if (player.z > 0 || player.vz > 0) {
       player.vz -= GRAVITY * dt;
-      if (duckHeld) player.vz -= 1800 * dt;
+      if (duckHeld()) player.vz -= 1800 * dt;
       player.z += player.vz * dt;
       if (player.z <= 0) { player.z = 0; player.vz = 0; }
     }
 
-    speed += 6 * dt;
+    speed += ACCEL * dt;
     score += speed * dt / 12;
     spawnIn -= dt;
     if (spawnIn <= 0) spawn();
@@ -162,11 +169,12 @@ export function createGame(canvas) {
       ctx.fillText('SPACE / UP = jump (spikes)', W / 2, 264);
       ctx.fillText('DOWN = duck (gates)', W / 2, 288);
       ctx.fillText('press space to start', W / 2, 330);
+      ctx.fillText('C = recalibrate camera  Esc = keyboard only', W / 2, 360);
     } else if (state === 'dead') {
       ctx.fillStyle = '#ff5d8f'; ctx.font = 'bold 40px monospace'; ctx.fillText('ZAPPED', W / 2, 240);
       ctx.fillStyle = '#8c82c8'; ctx.font = '16px monospace'; ctx.fillText('space to retry', W / 2, 275);
     }
   }
 
-  return { update, draw, start, jump, move, duckFor, setDuckHeld };
+  return { update, draw, start, jump, move, setLane, duckFor, setDuckHeld, isPlaying };
 }

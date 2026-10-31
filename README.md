@@ -19,12 +19,12 @@ Stand 2-3 m back with your whole body in view. After pressing Space, the calibra
 | Action | Body |
 |---|---|
 | Lane | stand in that lane |
-| Jump | jump (fires as you take off), or raise both hands above your head |
+| Jump | jump (fires as you take off), or keep both hands above your head to keep jumping |
 | Duck | squat, or put both hands on your head (hold it) |
 
 The dino changes lane once about 60% of your body's width is inside another lane (`laneShare` in `gestures.js`), so you don't have to step all the way over.
 
-Hands above the head jump once per raise: lower your hands to jump again. Body and hand controls both work at the same time, and so do the keys.
+Keep your hands above your head and the dino keeps jumping, landing and jumping again, until you lower them. Keep your hands on your head and it stays ducked. Body and hand controls both work at the same time, and so do the keys.
 
 ## Difficulty
 

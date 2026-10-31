@@ -32,6 +32,8 @@ export function createGame(canvas, { canStart = () => true } = {}) {
   let best = +(localStorage.getItem('blip-td-best') || 0);
   const duckSources = {};              // keyboard and pose each hold their own duck flag
   const duckHeld = () => Object.values(duckSources).some(Boolean);
+  const jumpSources = {};              // same for "keep jumping": while held, the dino jumps again on every landing
+  const jumpHeld = () => Object.values(jumpSources).some(Boolean);
   const stars = Array.from({ length: 40 }, () => ({ x: Math.random() * W, y: Math.random() * H, s: Math.random() * 2 + 0.5 }));
 
   function newPlayer() { return { lane: 1, x: LANES[1], z: 0, vz: 0, duckT: 0 }; }
@@ -58,6 +60,7 @@ export function createGame(canvas, { canStart = () => true } = {}) {
     if (state === 'play') player.duckT = seconds; else start();
   }
   function setDuckHeld(held, source = 'keys') { duckSources[source] = held; }
+  function setJumpHeld(held, source = 'keys') { jumpSources[source] = held; }
   const isPlaying = () => state === 'play';
 
   const ducking = () => player.z === 0 && (duckHeld() || player.duckT > 0);
@@ -79,6 +82,7 @@ export function createGame(canvas, { canStart = () => true } = {}) {
 
     player.x += (LANES[player.lane] - player.x) * Math.min(1, dt * 18);
     player.duckT = Math.max(0, player.duckT - dt);
+    if (jumpHeld() && player.z === 0 && player.vz === 0) player.vz = JUMP_V;
     if (player.z > 0 || player.vz > 0) {
       player.vz -= GRAVITY * dt;
       if (duckHeld()) player.vz -= 1800 * dt;
@@ -200,5 +204,5 @@ export function createGame(canvas, { canStart = () => true } = {}) {
     }
   }
 
-  return { update, draw, start, jump, move, setLane, duckFor, setDuckHeld, isPlaying };
+  return { update, draw, start, jump, move, setLane, duckFor, setDuckHeld, setJumpHeld, isPlaying };
 }

@@ -69,6 +69,7 @@ function useKeyboard(message) {
   ui.close();
   ui.hideCam();
   game.setDuckHeld(false, 'pose');
+  game.setJumpHeld(false, 'pose');
   if (message) ui.toast(message);
 }
 
@@ -103,6 +104,7 @@ function pollPose(t) {
       if (act.laneChanged) game.setLane(act.lane);
       if (act.jump) game.jump();
     }
+    game.setJumpHeld(playing && act.jumpHeld, 'pose');
     game.setDuckHeld(playing && act.ducking, 'pose');
     const d = controller.debug;
     drawPreview(overlay, video, landmarks, {
@@ -122,7 +124,7 @@ function loop(now) {
     game.setLane(controller.lane);
     controller.resetJump();
   }
-  if (!playing) game.setDuckHeld(false, 'pose');
+  if (!playing) { game.setDuckHeld(false, 'pose'); game.setJumpHeld(false, 'pose'); }
   wasPlaying = playing;
 
   game.update(dt);

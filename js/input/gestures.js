@@ -46,7 +46,7 @@ export const CONFIG = {
   onHeadScale: 1.6,       // play: on-head limit = calibrated head distance * this + onHeadPad
   onHeadPad: 0.1,
   handHysteresis: 0.15,   // once a hand gesture is on, its threshold relaxes by this fraction until it ends
-  handsUpHold: 0.05,      // seconds hands must stay up before the jump fires
+  handsUpHold: 0.05,      // seconds hands must stay up before jumping starts
   onHeadHold: 0.2,        // seconds hands must stay on the head before the duck starts (so raising your
                           // hands past your head doesn't flicker a duck)
 };
@@ -207,12 +207,13 @@ export function createCalibrator() {
 
 // Turns calibrated features into lane / jump / duck. Call update() once per camera frame.
 // Body jump fires on takeoff (the body starting to rise), not at the peak. Hands above the
-// head also jump (once per raise), and hands on the head duck, on top of the squat duck.
+// head keep jumping while they stay up (out.jumpHeld), and hands on the head keep ducking
+// while they stay there, on top of the squat duck.
 export function createController(cal) {
   const edges = [-Infinity, cal.bounds[0], cal.bounds[1], Infinity];   // lane i spans edges[i]..edges[i+1]
   let lane = 1, laneCand = null, laneSince = 0, hist = [], cooldownUntil = 0;
   let ducking = false, duckSince = null, lastDuckEnd = -Infinity, lostSince = null;
-  let upOn = false, upSince = null, upFired = false;
+  let upOn = false, upSince = null, jumpHeld = false;
   let headOn = false, headSince = null, headDuck = false;
   const debug = { rise: 0, drop: 0, up: 0, dist: 0, shares: [0, 0, 0] };
 
@@ -221,14 +222,14 @@ export function createController(cal) {
     debug,
     resetJump() { hist = []; cooldownUntil = 0; },
     update(f, t) {
-      const out = { lane, laneChanged: false, jump: false, ducking: ducking || headDuck };
+      const out = { lane, laneChanged: false, jump: false, jumpHeld, ducking: ducking || headDuck };
       if (!f) {
         lostSince ??= t;
         if (t - lostSince > CONFIG.lostTimeout) {
           ducking = false; duckSince = null;
-          upOn = false; upSince = null; upFired = false;
+          upOn = false; upSince = null; jumpHeld = false;
           headOn = false; headSince = null; headDuck = false;
-          out.ducking = false;
+          out.ducking = false; out.jumpHeld = false;
         }
         return out;
       }
@@ -255,16 +256,11 @@ export function createController(cal) {
       upOn = f.handsSeen && f.handsUp >= cal.handsUpMin * (upOn ? 1 - h : 1);
       headOn = !upOn && f.handsSeen && f.handsDist <= cal.onHeadMax * (headOn ? 1 + h : 1);
 
-      // hands above head: one jump per raise, after a short hold
+      // hands above head: jump for as long as they stay up (the game jumps again on every landing)
       if (upOn) {
         upSince ??= t;
-        if (!upFired && t - upSince >= CONFIG.handsUpHold) {
-          upFired = true;
-          out.jump = true;
-          cooldownUntil = t + CONFIG.jumpCooldown;   // don't let the body-jump detector double fire
-          hist = [];
-        }
-      } else { upSince = null; upFired = false; }
+        jumpHeld = t - upSince >= CONFIG.handsUpHold;
+      } else { upSince = null; jumpHeld = false; }
 
       // hands on head: duck while held, after a longer hold
       if (headOn) {
@@ -289,7 +285,7 @@ export function createController(cal) {
       while (hist.length && t - hist[0].t > CONFIG.jumpWindow) hist.shift();
       const rise = (hist[0].y - f.coreY) / f.torso;
       debug.rise = rise;
-      const free = !ducking && duckSince === null && t >= cooldownUntil && t - lastDuckEnd > CONFIG.postDuckLock;
+      const free = !ducking && duckSince === null && !upOn && t >= cooldownUntil && t - lastDuckEnd > CONFIG.postDuckLock;
       if (free && rise > CONFIG.jumpRise) {
         out.jump = true;
         cooldownUntil = t + CONFIG.jumpCooldown;
@@ -297,6 +293,7 @@ export function createController(cal) {
       }
 
       out.lane = lane;
+      out.jumpHeld = jumpHeld;
       out.ducking = ducking || headDuck;
       return out;
     },

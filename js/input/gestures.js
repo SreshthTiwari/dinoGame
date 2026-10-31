@@ -23,7 +23,10 @@ export const CONFIG = {
   calEdges: [0.35, 0.65], // calibration zones: left < first edge <= center < second edge <= right (closer to 0.5 = less movement)
 
   laneShare: 0.6,         // switch lanes once this fraction of your body's width is inside another lane (lower = less movement)
-  laneHold: 0.1,          // seconds that has to hold before the switch, so jitter on a boundary doesn't flicker
+  laneHold: 0.03,         // seconds that has to hold before the switch (about one frame, so one noisy frame can't switch)
+  laneLead: 0.08,         // seconds to look ahead along your sideways motion, to cancel camera + processing lag (0 = off)
+  laneLeadMin: 0.3,       // ...but only once at least this fraction of your body is already inside the new lane
+  laneSmooth: 0.85,       // smoothing weight for sideways position (higher = less lag, more jitter)
 
   jumpWindow: 0.2,        // seconds of history used to measure takeoff
   jumpRise: 0.18,         // torso lengths risen inside the window = takeoff
@@ -85,16 +88,18 @@ export function extractFeatures(lm, aspect) {
   };
 }
 
-export function createSmoother(a = CONFIG.smooth) {
+// a smooths everything; aLane is the (lighter) smoothing for sideways position, where lag is most noticeable
+export function createSmoother(a = CONFIG.smooth, aLane = CONFIG.laneSmooth) {
   let s = null;
   const blend = (prev, cur) => prev + a * (cur - prev);
+  const blendLane = (prev, cur) => prev + aLane * (cur - prev);
   return f => {
     if (!f) { s = null; return null; }
     const both = s && s.handsSeen && f.handsSeen;   // only blend hand values while both frames saw the hands
     s = s
       ? {
-          x: blend(s.x, f.x), coreY: blend(s.coreY, f.coreY), torso: blend(s.torso, f.torso), fullBody: f.fullBody,
-          left: blend(s.left, f.left), right: blend(s.right, f.right),
+          x: blendLane(s.x, f.x), coreY: blend(s.coreY, f.coreY), torso: blend(s.torso, f.torso), fullBody: f.fullBody,
+          left: blendLane(s.left, f.left), right: blendLane(s.right, f.right),
           handsSeen: f.handsSeen,
           handsUp: both ? blend(s.handsUp, f.handsUp) : f.handsUp,
           handsDist: both ? blend(s.handsDist, f.handsDist) : f.handsDist,
@@ -211,7 +216,7 @@ export function createCalibrator() {
 // while they stay there, on top of the squat duck.
 export function createController(cal) {
   const edges = [-Infinity, cal.bounds[0], cal.bounds[1], Infinity];   // lane i spans edges[i]..edges[i+1]
-  let lane = 1, laneCand = null, laneSince = 0, hist = [], cooldownUntil = 0;
+  let lane = 1, laneCand = null, laneSince = 0, xHist = [], hist = [], cooldownUntil = 0;
   let ducking = false, duckSince = null, lastDuckEnd = -Infinity, lostSince = null;
   let upOn = false, upSince = null, jumpHeld = false;
   let headOn = false, headSince = null, headDuck = false;
@@ -236,13 +241,25 @@ export function createController(cal) {
       lostSince = null;
 
       // lane: what fraction of the body's width is inside each lane. Move once a major portion
-      // (laneShare) is in another lane, and that holds for a moment.
+      // (laneShare) is in another lane, and that holds for a moment. The check looks a little
+      // ahead along the body's sideways motion (laneLead) to cancel camera + processing lag.
       const width = f.right - f.left;
-      const shares = [0, 1, 2].map(i => width < 0.02
-        ? (f.x >= edges[i] && f.x < edges[i + 1] ? 1 : 0)
-        : Math.max(0, Math.min(f.right, edges[i + 1]) - Math.max(f.left, edges[i])) / width);
+      const shareOf = (shift) => [0, 1, 2].map(i => width < 0.02
+        ? (f.x + shift >= edges[i] && f.x + shift < edges[i + 1] ? 1 : 0)
+        : Math.max(0, Math.min(f.right + shift, edges[i + 1]) - Math.max(f.left + shift, edges[i])) / width);
+      const mid = (f.left + f.right) / 2;
+      xHist.push({ t, mid });
+      while (xHist.length > 1 && t - xHist[0].t > 0.15) xHist.shift();
+      // sideways speed (frame widths/s). It must show in both the last frame and the last ~0.15 s,
+      // so the look-ahead switches itself off the moment the body stops.
+      const span = t - xHist[0].t, prev = xHist.length > 1 ? xHist[xHist.length - 2] : null;
+      const vWin = span >= 0.05 ? (mid - xHist[0].mid) / span : 0;
+      const vNow = prev && t - prev.t > 0.01 ? (mid - prev.mid) / (t - prev.t) : 0;
+      const vx = Math.sign(vWin) === Math.sign(vNow) ? Math.sign(vWin) * Math.min(1.5, Math.abs(vWin), Math.abs(vNow)) : 0;
+      const shares = shareOf(0);
+      const ahead = shareOf(vx * CONFIG.laneLead);
       debug.shares = shares;
-      const target = shares.findIndex(s => s >= CONFIG.laneShare);
+      const target = ahead.findIndex((s, i) => s >= CONFIG.laneShare && shares[i] >= (i === lane ? 0 : CONFIG.laneLeadMin));
       if (target >= 0 && target !== lane) {
         if (laneCand !== target) { laneCand = target; laneSince = t; }
         else if (t - laneSince >= CONFIG.laneHold) { lane = target; laneCand = null; out.laneChanged = true; }

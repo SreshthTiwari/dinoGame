@@ -2,6 +2,7 @@ const LANES = [120, 240, 360];
 const PY = 590;                      // player's screen y
 const GRAVITY = 1800, JUMP_V = 640;
 const BLOCK_CLEAR = 30;              // must be at least this high to hop a block
+const LANE_SLIDE = 30;               // how fast the dino slides into a new lane (higher = snappier)
 
 // Difficulty ramps linearly from the START values to the END values over RAMP_SECONDS, then holds.
 const RAMP_SECONDS = 150;
@@ -80,7 +81,7 @@ export function createGame(canvas, { canStart = () => true } = {}) {
     speed = difficultyAt(elapsed).speed;
     scroll += speed * dt;
 
-    player.x += (LANES[player.lane] - player.x) * Math.min(1, dt * 18);
+    player.x += (LANES[player.lane] - player.x) * Math.min(1, dt * LANE_SLIDE);
     player.duckT = Math.max(0, player.duckT - dt);
     if (jumpHeld() && player.z === 0 && player.vz === 0) player.vz = JUMP_V;
     if (player.z > 0 || player.vz > 0) {

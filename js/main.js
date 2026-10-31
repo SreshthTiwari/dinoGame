@@ -107,7 +107,7 @@ function pollPose(t) {
     const d = controller.debug;
     drawPreview(overlay, video, landmarks, {
       bounds: cal.bounds, active: act.lane,
-      debug: debug ? `rise ${d.rise.toFixed(2)} drop ${d.drop.toFixed(2)} up ${d.up.toFixed(2)}/${cal.handsUpMin.toFixed(2)} head ${d.dist.toFixed(2)}/${cal.onHeadMax.toFixed(2)}` : '',
+      debug: debug ? `lanes ${d.shares.map(s => Math.round(s * 100)).join('/')}% rise ${d.rise.toFixed(2)} drop ${d.drop.toFixed(2)} up ${d.up.toFixed(2)}/${cal.handsUpMin.toFixed(2)} head ${d.dist.toFixed(2)}/${cal.onHeadMax.toFixed(2)}` : '',
     });
   }
 }

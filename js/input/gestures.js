@@ -5,8 +5,10 @@
 
 export const LM = {
   NOSE: 0, L_EAR: 7, R_EAR: 8, L_SHOULDER: 11, R_SHOULDER: 12, L_WRIST: 15, R_WRIST: 16,
-  L_HIP: 23, R_HIP: 24, L_ANKLE: 27, R_ANKLE: 28,
+  L_HIP: 23, R_HIP: 24, L_KNEE: 25, R_KNEE: 26, L_ANKLE: 27, R_ANKLE: 28,
 };
+// points that make up the body's width for lane purposes (arms left out so waving doesn't widen it)
+const BODY_POINTS = [LM.L_SHOULDER, LM.R_SHOULDER, LM.L_HIP, LM.R_HIP, LM.L_KNEE, LM.R_KNEE, LM.L_ANKLE, LM.R_ANKLE];
 
 // Starting guesses, to be tuned by playing.
 export const CONFIG = {
@@ -20,7 +22,8 @@ export const CONFIG = {
   minLaneGap: 0.08,       // calibration: lane centers must be at least this far apart
   calEdges: [0.35, 0.65], // calibration zones: left < first edge <= center < second edge <= right (closer to 0.5 = less movement)
 
-  laneHysteresis: 0.15,   // overshoot a lane boundary by this fraction of the lane gap to switch
+  laneShare: 0.6,         // switch lanes once this fraction of your body's width is inside another lane (lower = less movement)
+  laneHold: 0.1,          // seconds that has to hold before the switch, so jitter on a boundary doesn't flicker
 
   jumpWindow: 0.2,        // seconds of history used to measure takeoff
   jumpRise: 0.18,         // torso lengths risen inside the window = takeoff
@@ -69,8 +72,13 @@ export function extractFeatures(lm, aspect) {
   const up = p => (headY - p.y) / torso;
   const dist = p => Math.hypot((p.x - headX) * aspect, p.y - headY) / torso;
 
+  // horizontal extent of the body (mirrored); falls back to a point at the hips if too little is visible
+  const xs = BODY_POINTS.map(i => lm[i]).filter(p => (p.visibility ?? 1) >= CONFIG.handVisibility).map(p => 1 - p.x);
+  const wide = xs.length >= 2;
+
   return {
     x: 1 - hipX, coreY: (hipY + shY) / 2, torso, fullBody,
+    left: wide ? Math.min(...xs) : 1 - hipX, right: wide ? Math.max(...xs) : 1 - hipX,
     handsSeen,
     handsUp: handsSeen ? Math.min(up(lw), up(rw)) : -1,   // -1 / 3 = "clearly neither gesture"
     handsDist: handsSeen ? Math.max(dist(lw), dist(rw)) : 3,
@@ -86,6 +94,7 @@ export function createSmoother(a = CONFIG.smooth) {
     s = s
       ? {
           x: blend(s.x, f.x), coreY: blend(s.coreY, f.coreY), torso: blend(s.torso, f.torso), fullBody: f.fullBody,
+          left: blend(s.left, f.left), right: blend(s.right, f.right),
           handsSeen: f.handsSeen,
           handsUp: both ? blend(s.handsUp, f.handsUp) : f.handsUp,
           handsDist: both ? blend(s.handsDist, f.handsDist) : f.handsDist,
@@ -200,13 +209,12 @@ export function createCalibrator() {
 // Body jump fires on takeoff (the body starting to rise), not at the peak. Hands above the
 // head also jump (once per raise), and hands on the head duck, on top of the squat duck.
 export function createController(cal) {
-  const [b0, b1] = cal.bounds;
-  const margin = CONFIG.laneHysteresis * cal.gap;
-  let lane = 1, hist = [], cooldownUntil = 0;
+  const edges = [-Infinity, cal.bounds[0], cal.bounds[1], Infinity];   // lane i spans edges[i]..edges[i+1]
+  let lane = 1, laneCand = null, laneSince = 0, hist = [], cooldownUntil = 0;
   let ducking = false, duckSince = null, lastDuckEnd = -Infinity, lostSince = null;
   let upOn = false, upSince = null, upFired = false;
   let headOn = false, headSince = null, headDuck = false;
-  const debug = { rise: 0, drop: 0, up: 0, dist: 0 };
+  const debug = { rise: 0, drop: 0, up: 0, dist: 0, shares: [0, 0, 0] };
 
   return {
     get lane() { return lane; },
@@ -226,12 +234,20 @@ export function createController(cal) {
       }
       lostSince = null;
 
-      // lane, with hysteresis so standing near a boundary doesn't flicker
-      let next = lane;
-      if (lane === 0 && f.x > b0 + margin) next = f.x > b1 + margin ? 2 : 1;
-      else if (lane === 1) { if (f.x < b0 - margin) next = 0; else if (f.x > b1 + margin) next = 2; }
-      else if (lane === 2 && f.x < b1 - margin) next = f.x < b0 - margin ? 0 : 1;
-      if (next !== lane) { lane = next; out.laneChanged = true; }
+      // lane: what fraction of the body's width is inside each lane. Move once a major portion
+      // (laneShare) is in another lane, and that holds for a moment.
+      const width = f.right - f.left;
+      const shares = [0, 1, 2].map(i => width < 0.02
+        ? (f.x >= edges[i] && f.x < edges[i + 1] ? 1 : 0)
+        : Math.max(0, Math.min(f.right, edges[i + 1]) - Math.max(f.left, edges[i])) / width);
+      debug.shares = shares;
+      const target = shares.findIndex(s => s >= CONFIG.laneShare);
+      if (target >= 0 && target !== lane) {
+        if (laneCand !== target) { laneCand = target; laneSince = t; }
+        else if (t - laneSince >= CONFIG.laneHold) { lane = target; laneCand = null; out.laneChanged = true; }
+      } else {
+        laneCand = null;
+      }
 
       // hands: "up" and "on head" are exclusive, and each relaxes slightly once it's on
       const h = CONFIG.handHysteresis;

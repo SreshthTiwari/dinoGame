@@ -1,7 +1,7 @@
 import { createGame } from './game.js';
 import { attachKeyboard } from './input/keyboard.js';
 import { createPose } from './input/pose.js';
-import { extractFeatures, createSmoother, createCalibrator, createController } from './input/gestures.js';
+import { CONFIG, extractFeatures, createSmoother, createCalibrator, createController } from './input/gestures.js';
 import { drawPreview } from './ui/preview.js';
 import { createCalibrationUI } from './ui/calibration.js';
 
@@ -93,7 +93,7 @@ function pollPose(t) {
     const s = calibrator.update(f, dt);
     ui.setMessage(s.message);
     ui.setProgress(s.progress);
-    drawPreview(overlay, video, landmarks, { labels: true, active: s.step });
+    drawPreview(overlay, video, landmarks, { labels: true, active: s.step, bounds: CONFIG.calEdges });
     if (s.done) finishCalibration();
   } else if (mode === 'ready') {
     const act = controller.update(f, t);

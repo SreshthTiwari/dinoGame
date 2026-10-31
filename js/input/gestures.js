@@ -11,10 +11,12 @@ export const CONFIG = {
   visibility: 0.5,        // min landmark visibility to count as "seen"
 
   holdSeconds: 1.5,       // calibration: how long to stand still in each lane
-  stillRange: 0.025,      // calibration: max sideways drift (frame widths) while holding
+  stillRange: 0.025,      // calibration: max sideways drift (frame widths) inside the window below
+  stillWindow: 0.5,       // calibration: seconds of recent movement the stillness check looks at
   minLaneGap: 0.08,       // calibration: lane centers must be at least this far apart
+  calEdges: [0.4, 0.6],   // calibration zones: left < 0.4 <= center < 0.6 <= right (smaller = less movement)
 
-  laneHysteresis: 0.2,    // overshoot a lane boundary by this fraction of the lane gap to switch
+  laneHysteresis: 0.15,   // overshoot a lane boundary by this fraction of the lane gap to switch
 
   jumpWindow: 0.2,        // seconds of history used to measure takeoff
   jumpRise: 0.18,         // torso lengths risen inside the window = takeoff
@@ -59,28 +61,36 @@ export const LANE_NAMES = ['LEFT', 'CENTER', 'RIGHT'];
 // frame; it records where each lane is and the standing baseline (from the center lane).
 export function createCalibrator() {
   let step = 0, holdT = 0, samples = [], centers = [], base = null, result = null;
+  let clock = 0;
+  let notice = '', noticeT = 0;          // a failure message that stays up for a moment
   const reset = () => { holdT = 0; samples = []; };
   const status = message => ({
     step, name: LANE_NAMES[step],
     progress: result ? 1 : Math.min(1, holdT / CONFIG.holdSeconds),
-    message, done: !!result,
+    message: noticeT > 0 ? notice : message, done: !!result,
   });
   const prompt = () => `Step into the ${LANE_NAMES[step]} lane`;
 
   return {
     result: () => result,
     update(f, dt) {
+      clock += dt;
+      noticeT = Math.max(0, noticeT - dt);
       if (result) return status('Done!');
       if (!f) { reset(); return status('Step into view'); }
       if (!f.fullBody) { reset(); return status('Step back so your whole body is visible'); }
 
-      const band = Math.min(2, Math.max(0, Math.floor(f.x * 3)));
+      const band = f.x < CONFIG.calEdges[0] ? 0 : f.x < CONFIG.calEdges[1] ? 1 : 2;
       if (band !== step) { reset(); return status(prompt()); }
 
-      samples.push(f);
+      // stillness is judged over the last stillWindow seconds only, so settling into the
+      // spot or a slow sway earlier in the hold doesn't throw the whole hold away
+      const sample = { t: clock, x: f.x, coreY: f.coreY, torso: f.torso };
+      samples.push(sample);
+      while (samples[0].t < clock - CONFIG.stillWindow) samples.shift();
       holdT += dt;
       const xs = samples.map(s => s.x);
-      if (Math.max(...xs) - Math.min(...xs) > CONFIG.stillRange) { samples = [f]; holdT = 0; return status('Hold still'); }
+      if (Math.max(...xs) - Math.min(...xs) > CONFIG.stillRange) { samples = [sample]; holdT = 0; return status('Hold still'); }
       if (holdT < CONFIG.holdSeconds) return status('Hold still');
 
       const mean = k => samples.reduce((a, s) => a + s[k], 0) / samples.length;
@@ -91,7 +101,11 @@ export function createCalibrator() {
       if (step < 3) return status(prompt());
 
       const gap = Math.min(centers[1] - centers[0], centers[2] - centers[1]);
-      if (gap < CONFIG.minLaneGap) { centers = []; step = 0; return status('Lanes too close - spread out more'); }
+      if (gap < CONFIG.minLaneGap) {
+        centers = []; step = 0;
+        notice = 'Lanes too close - spread out a bit more'; noticeT = 2;
+        return status(prompt());
+      }
       result = {
         centers,
         bounds: [(centers[0] + centers[1]) / 2, (centers[1] + centers[2]) / 2],

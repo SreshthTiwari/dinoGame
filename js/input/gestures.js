@@ -14,7 +14,7 @@ export const CONFIG = {
   stillRange: 0.025,      // calibration: max sideways drift (frame widths) inside the window below
   stillWindow: 0.5,       // calibration: seconds of recent movement the stillness check looks at
   minLaneGap: 0.08,       // calibration: lane centers must be at least this far apart
-  calEdges: [0.4, 0.6],   // calibration zones: left < 0.4 <= center < 0.6 <= right (smaller = less movement)
+  calEdges: [0.35, 0.65],   // calibration zones: left < 0.4 <= center < 0.6 <= right (smaller = less movement)
 
   laneHysteresis: 0.15,   // overshoot a lane boundary by this fraction of the lane gap to switch
 

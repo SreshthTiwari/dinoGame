@@ -5,6 +5,7 @@ import { CONFIG, extractFeatures, createSmoother, createCalibrator, createContro
 import { extractPlankFeatures, createPlankSmoother, createPlankCalibrator, createPlankController } from './input/plank.js';
 import { drawPreview } from './ui/preview.js';
 import { createCalibrationUI } from './ui/calibration.js';
+import { createCameraPanel } from './ui/camera.js';
 
 const canvas = document.getElementById('c');
 const video = document.getElementById('cam');
@@ -16,10 +17,12 @@ let mode = 'idle';
 let pose = null, calibrator = null, controller = null, cal = null;
 const smooth = createSmoother();
 const smoothPlank = createPlankSmoother();
-let plankMode = false;               // false = standing (whole body), true = plank (shoulder taps + pushups)
+let plankMode = true;                // true = plank (shoulder taps + pushups, the default), false = standing (whole body)
 let debug = false, wasPlaying = false, lastDetect = 0;
 
 const game = createGame(canvas, { canStart });
+game.setPlank(plankMode);
+const camPanel = createCameraPanel(game.cam);
 attachKeyboard(canvas, game);
 
 // The first start request kicks off camera setup; the game only starts once calibration is done.
@@ -89,6 +92,7 @@ addEventListener('keydown', e => {
     if (pose && mode !== 'keyboard') startCalibration();   // each mode has its own calibration
   }
   if (e.code === 'KeyV') ui.toggleMini();
+  if (e.code === 'KeyH') camPanel.toggle();
   if (e.code === 'KeyD') debug = !debug;
 });
 

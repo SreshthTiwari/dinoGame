@@ -28,7 +28,7 @@ Keep your hands above your head and the dino keeps jumping, landing and jumping 
 
 ## Plank mode
 
-Press P on the start screen to switch between standing and plank mode. Put the camera in front of you at floor level and get into a plank facing it. Calibration is two steps: hold the plank still, then lower into a pushup and hold the bottom. The game assumes you are planking; it doesn't check.
+Plank mode is the default. Press P on the start screen to switch between it and standing mode. Put the camera in front of you at floor level and get into a plank facing it. Calibration is two steps: hold the plank still, then lower into a pushup and hold the bottom. The game assumes you are planking; it doesn't check.
 
 | Action | Body |
 |---|---|
@@ -53,6 +53,7 @@ The run gets harder as it goes: over 150 seconds the road speeds up from 300 to 
 | Standing / plank mode | P (when not mid-run) |
 | Keyboard only | Esc |
 | Show/hide camera preview | V |
+| Show/hide the 3D camera sliders (distance, horizon, follow) | H |
 | Show live jump/duck/hand numbers on the preview | D |
 
 Touch: swipe up = jump, down = duck, left/right = lane, tap = jump.

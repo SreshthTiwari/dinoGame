@@ -2,6 +2,10 @@ const LANES = [120, 240, 360];
 const PY = 590;                      // player's screen y
 const GRAVITY = 1800, JUMP_V = 640;
 const BLOCK_CLEAR = 30;              // must be at least this high to hop a block
+// Fake 3D camera (live-adjustable: see ui/camera.js).  horizon = screen y of the horizon,
+// back = how far behind the dino the camera sits (smaller = stronger perspective),
+// follow = how much the camera drifts sideways with the dino (0 = fixed).
+export const CAM_DEFAULTS = { horizon: 140, back: 350, follow: 0.35 };
 const LANE_SLIDE = 30;               // how fast the dino slides into a new lane (higher = snappier)
 
 // Difficulty ramps linearly from the START values to the END values over RAMP_SECONDS, then holds.
@@ -30,6 +34,8 @@ export function createGame(canvas, { canStart = () => true } = {}) {
 
   let plank = false;                   // plank mode: gates only (no spikes, so no jumping)
   let state = 'start', player, obstacles, score, speed, spawnIn, t = 0, scroll = 0;
+  const cam = { ...CAM_DEFAULTS };
+  let camX = 240;                      // world x the camera looks along
   let elapsed = 0, phase = 0;          // seconds into the run; run-cycle phase (advances faster as the dino speeds up)
   let best = +(localStorage.getItem('blip-td-best') || 0);
   const duckSources = {};              // keyboard and pose each hold their own duck flag
@@ -111,8 +117,26 @@ export function createGame(canvas, { canStart = () => true } = {}) {
     }
   }
 
-  function drawBlock(o) {
-    const x = LANES[o.lane], y = o.y;
+  // Chase-camera projection. World x runs across the road and y along it (the player sits at
+  // y = PY, where s = 1). s shrinks toward the horizon, so far things are smaller and higher up.
+  function project(wx, wy) {
+    const s = cam.back / (cam.back + PY - wy);
+    return { x: W / 2 + (wx - camX) * s, y: cam.horizon + (PY - cam.horizon) * s, s };
+  }
+  // draw fn(ctx) at world (wx, wy), scaled by perspective and faded into the distance
+  function inWorld(wx, wy, fn) {
+    if (wy > PY + cam.back * 0.5) return;
+    const p = project(wx, wy);
+    if (p.y > H + 120) return;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, Math.max(0, (p.s - 0.2) / 0.25));
+    ctx.translate(p.x, p.y); ctx.scale(p.s, p.s);
+    fn();
+    ctx.restore();
+  }
+
+  function drawBlock() {
+    const x = 0, y = 0;
     ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x - 36, y - 6, 72, 26);
     ctx.fillStyle = '#ff5d8f';
     for (let i = 0; i < 3; i++) {
@@ -123,8 +147,8 @@ export function createGame(canvas, { canStart = () => true } = {}) {
     for (let i = 0; i < 3; i++) ctx.fillRect(x - 24 + i * 22, y - 2, 4, 4);
   }
 
-  function drawBeam(o) {
-    const x = LANES[o.lane], y = o.y;
+  function drawBeam() {
+    const x = 0, y = 0;
     ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x - 40, y + 4, 80, 20); // shadow on the floor
     ctx.fillStyle = '#7a5cff';                                              // posts
     ctx.fillRect(x - 42, y - 10, 10, 24); ctx.fillRect(x + 32, y - 10, 10, 24);
@@ -137,7 +161,7 @@ export function createGame(canvas, { canStart = () => true } = {}) {
   function drawPlayer() {
     const duck = ducking();
     const sc = 1 + player.z / 260 - (duck ? 0.3 : 0);
-    const x = player.x, y = PY - player.z * 0.45;
+    const x = project(player.x, PY).x, y = PY - player.z * 0.45;
     // shadow stays on the floor, shrinks as you rise
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     const ss = Math.max(0.5, 1 - player.z / 250);
@@ -169,21 +193,54 @@ export function createGame(canvas, { canStart = () => true } = {}) {
   }
 
   function draw() {
-    ctx.fillStyle = '#0e0b1f'; ctx.fillRect(0, 0, W, H);
-    for (const s of stars) { ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fillRect(s.x, (s.y + scroll * s.s * 0.2) % H, s.s, s.s); }
+    camX = W / 2 + (player.x - W / 2) * cam.follow;
+    const vx = project(camX, -1e6).x;                         // vanishing point
+
+    // sky, with stars, fading to a glow at the horizon
+    const sky = ctx.createLinearGradient(0, 0, 0, cam.horizon);
+    sky.addColorStop(0, '#0e0b1f'); sky.addColorStop(1, '#2d1a6b');
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, W, cam.horizon);
+    for (const st of stars) { ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(st.x, (st.y / H) * cam.horizon * 0.9, st.s, st.s); }
+
+    // ground: a grid that scrolls toward the camera, so speed reads
+    ctx.fillStyle = '#0e0b1f'; ctx.fillRect(0, cam.horizon, W, H - cam.horizon);
+    ctx.lineWidth = 1;
+    for (let k = -8; k <= 8; k++) {
+      const a = project(W / 2 + k * 120, PY - 3000), c = project(W / 2 + k * 120, PY + 200);
+      ctx.strokeStyle = 'rgba(122,92,255,0.18)';
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke();
+    }
+    const off = scroll % 60;
+    for (let wy = 780 + off - 60; wy > PY - 3000; wy -= 60) {
+      const p = project(0, wy);
+      ctx.strokeStyle = `rgba(122,92,255,${Math.min(0.25, p.s * 0.3)})`;
+      ctx.beginPath(); ctx.moveTo(0, p.y); ctx.lineTo(W, p.y); ctx.stroke();
+    }
 
     // road
-    const rx = LANES[0] - 60, rw = LANES[2] - LANES[0] + 120;
-    ctx.fillStyle = '#1b1040'; ctx.fillRect(rx, 0, rw, H);
-    ctx.fillStyle = '#5ef2c8'; ctx.fillRect(rx - 3, 0, 3, H); ctx.fillRect(rx + rw, 0, 3, H);
+    const rl = LANES[0] - 60, rr = LANES[2] + 60;
+    const [fl, fr, nl, nr] = [project(rl, PY - 3000), project(rr, PY - 3000), project(rl, PY + 200), project(rr, PY + 200)];
+    ctx.fillStyle = '#1b1040';
+    ctx.beginPath(); ctx.moveTo(fl.x, fl.y); ctx.lineTo(fr.x, fr.y); ctx.lineTo(nr.x, nr.y); ctx.lineTo(nl.x, nl.y); ctx.fill();
+    ctx.strokeStyle = '#5ef2c8'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(fl.x, fl.y); ctx.lineTo(nl.x, nl.y); ctx.moveTo(fr.x, fr.y); ctx.lineTo(nr.x, nr.y); ctx.stroke();
     ctx.fillStyle = '#3a2a7a';
-    const off = scroll % 60;
     for (const lx of [(LANES[0] + LANES[1]) / 2, (LANES[1] + LANES[2]) / 2])
-      for (let y = -60 + off; y < H; y += 60) ctx.fillRect(lx - 2, y, 4, 30);
+      for (let wy = 780 + off - 60; wy > PY - 3000; wy -= 60) {
+        const a = project(lx, wy), c = project(lx, wy - 30);   // dash from wy back to wy - 30
+        ctx.beginPath();
+        ctx.moveTo(a.x - 2 * a.s, a.y); ctx.lineTo(a.x + 2 * a.s, a.y); ctx.lineTo(c.x + 2 * c.s, c.y); ctx.lineTo(c.x - 2 * c.s, c.y); ctx.fill();
+      }
 
-    obstacles.filter(o => o.kind === 'block').forEach(drawBlock);
+    // haze at the horizon hides where the road ends
+    const haze = ctx.createLinearGradient(0, cam.horizon, 0, cam.horizon + 90);
+    haze.addColorStop(0, 'rgba(45,26,107,1)'); haze.addColorStop(1, 'rgba(45,26,107,0)');
+    ctx.fillStyle = haze; ctx.fillRect(0, cam.horizon, W, 90);
+
+    const far2near = (a, b) => a.y - b.y;                     // smaller y = farther away = draw first
+    obstacles.filter(o => o.kind === 'block').sort(far2near).forEach(o => inWorld(LANES[o.lane], o.y, drawBlock));
     drawPlayer();
-    obstacles.filter(o => o.kind === 'beam').forEach(drawBeam);   // overhead, so drawn over the player
+    obstacles.filter(o => o.kind === 'beam').sort(far2near).forEach(o => inWorld(LANES[o.lane], o.y, drawBeam));   // overhead, so drawn over the player
 
     ctx.fillStyle = '#e8e4ff'; ctx.font = 'bold 20px monospace'; ctx.textAlign = 'right';
     ctx.fillText(String(Math.floor(score)).padStart(5, '0'), W - 16, 30);
@@ -213,5 +270,5 @@ export function createGame(canvas, { canStart = () => true } = {}) {
     }
   }
 
-  return { update, draw, start, jump, move, setLane, duckFor, setDuckHeld, setJumpHeld, setPlank, isPlaying };
+  return { update, draw, start, jump, move, setLane, duckFor, setDuckHeld, setJumpHeld, setPlank, isPlaying, cam };
 }

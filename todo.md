@@ -7,3 +7,4 @@
 - [ ] Don't make the player stand all the way back: work with only part of the body in view (e.g. upper body only, no feet), so the calibration and controls don't depend on seeing the whole body
 - [x] Planking version of the game: shoulder taps + pushups (first pass, untested with a real camera)
 - [ ] Plank mode: detect that the user is actually in a plank, and pause when they drop out
+- [ ] Make the plank controls better (tap and pushup detection feel, thresholds, calibration)

@@ -2,6 +2,7 @@ import { createGame } from './game.js';
 import { attachKeyboard } from './input/keyboard.js';
 import { createPose } from './input/pose.js';
 import { CONFIG, extractFeatures, createSmoother, createCalibrator, createController } from './input/gestures.js';
+import { extractPlankFeatures, createPlankSmoother, createPlankCalibrator, createPlankController } from './input/plank.js';
 import { drawPreview } from './ui/preview.js';
 import { createCalibrationUI } from './ui/calibration.js';
 
@@ -14,6 +15,8 @@ const ui = createCalibrationUI();
 let mode = 'idle';
 let pose = null, calibrator = null, controller = null, cal = null;
 const smooth = createSmoother();
+const smoothPlank = createPlankSmoother();
+let plankMode = false;               // false = standing (whole body), true = plank (shoulder taps + pushups)
 let debug = false, wasPlaying = false, lastDetect = 0;
 
 const game = createGame(canvas, { canStart });
@@ -43,9 +46,9 @@ async function loadCamera() {
 
 function startCalibration() {
   mode = 'calibrating';
-  calibrator = createCalibrator();
+  calibrator = plankMode ? createPlankCalibrator() : createCalibrator();
   controller = null;
-  ui.setMessage('(1/5) Step into the LEFT lane');
+  ui.setMessage(plankMode ? '(1/2) Get into your plank, facing the camera' : '(1/5) Step into the LEFT lane');
   ui.setProgress(0);
   ui.showBig();
 }
@@ -56,7 +59,7 @@ function finishCalibration() {
   ui.setMessage('Ready!');
   setTimeout(() => {
     if (mode !== 'finishing') return;
-    controller = createController(cal);
+    controller = plankMode ? createPlankController(cal) : createController(cal);
     mode = 'ready';
     ui.showMini();
     game.start();
@@ -79,6 +82,12 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyC' && !game.isPlaying() && mode !== 'loading' && mode !== 'calibrating' && mode !== 'finishing') {
     if (pose) startCalibration(); else loadCamera();
   }
+  if (e.code === 'KeyP' && !game.isPlaying() && mode !== 'loading' && mode !== 'calibrating' && mode !== 'finishing') {
+    plankMode = !plankMode;
+    game.setPlank(plankMode);
+    ui.toast(plankMode ? 'Plank mode' : 'Standing mode');
+    if (pose && mode !== 'keyboard') startCalibration();   // each mode has its own calibration
+  }
   if (e.code === 'KeyV') ui.toggleMini();
   if (e.code === 'KeyD') debug = !debug;
 });
@@ -88,9 +97,27 @@ function pollPose(t) {
   const landmarks = pose.detect();
   if (landmarks === undefined) return;   // no new camera frame yet
   const dt = Math.min(0.2, t - lastDetect); lastDetect = t;
-  const f = smooth(landmarks && extractFeatures(landmarks, pose.aspect));
+  const f = plankMode
+    ? smoothPlank(landmarks && extractPlankFeatures(landmarks, pose.aspect))
+    : smooth(landmarks && extractFeatures(landmarks, pose.aspect));
 
-  if (mode === 'calibrating') {
+  if (mode === 'calibrating' && plankMode) {
+    const s = calibrator.update(f, dt);
+    ui.setMessage(s.done ? s.message : `(${s.step + 1}/${s.total}) ${s.message}`);
+    ui.setProgress(s.progress);
+    drawPreview(overlay, video, landmarks, { bands: false });
+    if (s.done) finishCalibration();
+  } else if (mode === 'ready' && plankMode) {
+    const act = controller.update(f, t);
+    const playing = game.isPlaying();
+    if (playing && act.laneDelta) game.move(act.laneDelta);
+    game.setDuckHeld(playing && act.ducking, 'pose');
+    const d = controller.debug;
+    drawPreview(overlay, video, landmarks, {
+      bands: false,
+      debug: debug ? `pushup ${d.depth.toFixed(2)} tapL ${d.tapLeft.toFixed(2)} tapR ${d.tapRight.toFixed(2)}` : '',
+    });
+  } else if (mode === 'calibrating') {
     const s = calibrator.update(f, dt);
     ui.setMessage(s.done ? s.message : `(${s.step + 1}/${s.total}) ${s.message}`);
     ui.setProgress(s.progress);
@@ -121,8 +148,7 @@ function loop(now) {
 
   const playing = game.isPlaying();
   if (playing && !wasPlaying && controller) {   // a run just began: line up with where the player is standing
-    game.setLane(controller.lane);
-    controller.resetJump();
+    if (!plankMode) { game.setLane(controller.lane); controller.resetJump(); }
   }
   if (!playing) { game.setDuckHeld(false, 'pose'); game.setJumpHeld(false, 'pose'); }
   wasPlaying = playing;

@@ -28,6 +28,7 @@ export function createGame(canvas, { canStart = () => true } = {}) {
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
 
+  let plank = false;                   // plank mode: gates only (no spikes, so no jumping)
   let state = 'start', player, obstacles, score, speed, spawnIn, t = 0, scroll = 0;
   let elapsed = 0, phase = 0;          // seconds into the run; run-cycle phase (advances faster as the dino speeds up)
   let best = +(localStorage.getItem('blip-td-best') || 0);
@@ -63,13 +64,14 @@ export function createGame(canvas, { canStart = () => true } = {}) {
   function setDuckHeld(held, source = 'keys') { duckSources[source] = held; }
   function setJumpHeld(held, source = 'keys') { jumpSources[source] = held; }
   const isPlaying = () => state === 'play';
+  function setPlank(on) { plank = on; }
 
   const ducking = () => player.z === 0 && (duckHeld() || player.duckT > 0);
 
   function spawn() {
     const dif = difficultyAt(elapsed);
     const lanes = [0, 1, 2].sort(() => Math.random() - 0.5).slice(0, Math.random() < dif.twoLane ? 2 : 1);
-    for (const l of lanes) obstacles.push({ lane: l, y: -60, kind: Math.random() < 0.45 ? 'beam' : 'block' });
+    for (const l of lanes) obstacles.push({ lane: l, y: -60, kind: plank || Math.random() < 0.45 ? 'beam' : 'block' });
     spawnIn = dif.gap + Math.random() * dif.extra;
   }
 
@@ -194,16 +196,22 @@ export function createGame(canvas, { canStart = () => true } = {}) {
     if (state === 'start') {
       ctx.fillStyle = '#e8e4ff'; ctx.font = 'bold 40px monospace'; ctx.fillText('BLIP DASH', W / 2, 200);
       ctx.font = '15px monospace'; ctx.fillStyle = '#8c82c8';
-      ctx.fillText('LEFT / RIGHT = switch lane', W / 2, 240);
-      ctx.fillText('SPACE / UP = jump (spikes)', W / 2, 264);
-      ctx.fillText('DOWN = duck (gates)', W / 2, 288);
+      if (plank) {
+        ctx.fillText('PLANK MODE', W / 2, 225);
+        ctx.fillText('tap a shoulder (opposite hand) = switch lane', W / 2, 252);
+        ctx.fillText('pushup = duck (gates)', W / 2, 276);
+      } else {
+        ctx.fillText('LEFT / RIGHT = switch lane', W / 2, 240);
+        ctx.fillText('SPACE / UP = jump (spikes)', W / 2, 264);
+        ctx.fillText('DOWN = duck (gates)', W / 2, 288);
+      }
       ctx.fillText('press space to start', W / 2, 330);
-      ctx.fillText('C = recalibrate camera  Esc = keyboard only', W / 2, 360);
+      ctx.fillText(`P = ${plank ? 'standing' : 'plank'} mode  C = recalibrate  Esc = keyboard only`, W / 2, 360);
     } else if (state === 'dead') {
       ctx.fillStyle = '#ff5d8f'; ctx.font = 'bold 40px monospace'; ctx.fillText('ZAPPED', W / 2, 240);
       ctx.fillStyle = '#8c82c8'; ctx.font = '16px monospace'; ctx.fillText('space to retry', W / 2, 275);
     }
   }
 
-  return { update, draw, start, jump, move, setLane, duckFor, setDuckHeld, setJumpHeld, isPlaying };
+  return { update, draw, start, jump, move, setLane, duckFor, setDuckHeld, setJumpHeld, setPlank, isPlaying };
 }

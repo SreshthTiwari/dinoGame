@@ -6,6 +6,8 @@ import { extractPlankFeatures, createPlankSmoother, createPlankCalibrator, creat
 import { drawPreview } from './ui/preview.js';
 import { createCalibrationUI } from './ui/calibration.js';
 import { createCameraPanel } from './ui/camera.js';
+import { createFake3D } from './render/fake3d.js';
+import { drawHud } from './render/hud.js';
 
 const canvas = document.getElementById('c');
 const video = document.getElementById('cam');
@@ -22,7 +24,35 @@ let debug = false, wasPlaying = false, lastDetect = 0;
 
 const game = createGame(canvas, { canStart });
 game.setPlank(plankMode);
-const camPanel = createCameraPanel(game.cam);
+const camPanel = createCameraPanel();
+
+// Renderers: 'fake3d' (2D canvas with hand-made perspective) and 'three' (real 3D, loaded on demand).
+// R switches; the choice is remembered, and ?render=three or ?render=fake3d overrides it.
+const stage = document.getElementById('stage');
+const renderers = { fake3d: createFake3D(canvas) };
+let renderer = renderers.fake3d;
+async function setRenderer(name) {
+  if (!renderers[name]) {
+    try {
+      const { createThree } = await import('./render/three.js');
+      renderers[name] = createThree(canvas, stage);
+    } catch (err) {
+      console.error(err);
+      ui.toast('Could not start the three.js renderer (see console)');
+      return;
+    }
+  }
+  renderer.deactivate();
+  renderer = renderers[name];
+  renderer.activate();
+  camPanel.setRenderer(renderer);
+  try { localStorage.setItem('blip-renderer', name); } catch {}
+}
+{
+  let want = new URLSearchParams(location.search).get('render');
+  try { want ??= localStorage.getItem('blip-renderer'); } catch {}
+  setRenderer(want === 'three' ? 'three' : 'fake3d');
+}
 attachKeyboard(canvas, game);
 
 // The first start request kicks off camera setup; the game only starts once calibration is done.
@@ -93,6 +123,10 @@ addEventListener('keydown', e => {
   }
   if (e.code === 'KeyV') ui.toggleMini();
   if (e.code === 'KeyH') camPanel.toggle();
+  if (e.code === 'KeyR') {
+    const next = renderer.name === 'fake3d' ? 'three' : 'fake3d';
+    setRenderer(next).then(() => ui.toast(next === 'three' ? 'three.js 3D' : 'Fake 3D'));
+  }
   if (e.code === 'KeyD') debug = !debug;
 });
 
@@ -158,7 +192,8 @@ function loop(now) {
   wasPlaying = playing;
 
   game.update(dt);
-  game.draw();
+  renderer.draw(game.getView());
+  drawHud(canvas.getContext('2d'), game.getView());
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);

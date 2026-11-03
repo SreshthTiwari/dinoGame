@@ -37,6 +37,10 @@ Plank mode is the default. Press P on the start screen to switch between it and 
 
 Plank mode only has gates (no spikes), so there is no jumping. Numbers are in `PLANK_CONFIG` in `plank.js`; D shows them live on the preview.
 
+## Looks
+
+Two renderers share the same game: fake 3D (the 2D canvas with perspective drawn by hand) and real 3D (three.js, a chase camera behind the dino). Press R to switch; the choice is remembered, and `?render=three` or `?render=fake3d` in the URL overrides it. The sliders in the bottom-left move the camera (each look has its own, saved separately); H hides them.
+
 ## Difficulty
 
 The run gets harder as it goes: over 150 seconds the road speeds up from 300 to 600 px/s, obstacles come closer together, and double-lane rows get more common (LV 1 to LV 10 shown at the top). The dino's legs and tail speed up with it. The numbers are at the top of `js/game.js`.
@@ -53,18 +57,21 @@ The run gets harder as it goes: over 150 seconds the road speeds up from 300 to 
 | Standing / plank mode | P (when not mid-run) |
 | Keyboard only | Esc |
 | Show/hide camera preview | V |
-| Show/hide the 3D camera sliders (distance, horizon, follow) | H |
+| Switch look: fake 3D / real 3D (three.js) | R |
+| Show/hide the camera sliders | H |
 | Show live jump/duck/hand numbers on the preview | D |
 
 Touch: swipe up = jump, down = duck, left/right = lane, tap = jump.
 
 ## Layout
 
-- `js/game.js` game logic and drawing
+- `js/game.js` game logic (no drawing); `getView()` hands renderers a snapshot of the frame
+- `js/render/fake3d.js` the 2D canvas with hand-made perspective (default); `js/render/three.js` real 3D with three.js, loaded only when selected; `js/render/hud.js` score and title text shared by both
 - `js/input/keyboard.js` keyboard + touch
 - `js/input/pose.js` webcam + MediaPipe
 - `js/input/gestures.js` landmarks to lane / jump / duck, calibration (thresholds in `CONFIG`)
 - `js/input/plank.js` plank mode: shoulder taps and pushups, calibration (thresholds in `PLANK_CONFIG`)
 - `js/ui/` calibration screen and camera preview
 - `vendor/mediapipe/` MediaPipe tasks-vision 0.10.21, self-hosted
+- `vendor/three/` three.js r160, self-hosted
 - `models/` pose landmarker (lite) model

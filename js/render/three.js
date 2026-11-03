@@ -22,6 +22,11 @@ const CX = LANES[1];                 // x of the middle lane
 const ROAD_W = LANES[2] - LANES[0] + 120, FAR = 3000, NEAR = 400;
 const JUMP_VIS = 0.8;                // scene units of height per unit of game jump height
 const DINO_SCALE = 1.4;
+// ducking dips the head and neck forward and down (the body stays put). Standing, the head is
+// above a gate's bar; ducked, it is below it.
+const DUCK_ANGLE = -1.2;             // radians the neck pitches forward-down at full duck
+const DUCK_CROUCH = 3;               // how far the whole body sinks (model units)
+const DUCK_SPEED = 18;               // how fast the duck eases in and out (per second)
 const HORIZON = 0x2d1a6b;
 
 // a small canvas drawn once, used as a repeating texture
@@ -98,21 +103,27 @@ export function createThree(canvas2d, stage) {
   const mat = c => new THREE.MeshLambertMaterial({ color: c });
   const bodyMat = mat(0x5ef2c8), darkMat = mat(0x2bb894), pinkMat = mat(0xff5d8f);
   const dino = new THREE.Group();
-  const model = new THREE.Group();               // scaled / squashed as a unit
+  const model = new THREE.Group();               // the dino as a unit (sinks a little when ducking)
   dino.add(model);
   const add = (parent, geo, material, x, y, z) => {
     const m = new THREE.Mesh(geo, material); m.position.set(x, y, z); parent.add(m); return m;
   };
   const body = add(model, new THREE.SphereGeometry(1, 20, 14), bodyMat, 0, 16, 0);
   body.scale.set(16, 13, 22);
-  const head = add(model, new THREE.SphereGeometry(11, 16, 12), bodyMat, 0, 27, -20);
-  add(model, new THREE.BoxGeometry(14, 10, 14), bodyMat, 0, 24, -31);
+  // neck + head hang off a pivot at the front of the body, so ducking is just rotating the pivot
+  const neck = new THREE.Group();
+  neck.position.set(0, 20, -16);
+  model.add(neck);
+  const stalk = add(neck, new THREE.CylinderGeometry(5.5, 7.5, 17.5, 10), bodyMat, 0, 8, -3.5);
+  stalk.rotation.x = -Math.atan(7 / 16);           // leans forward, away from the camera
+  add(neck, new THREE.SphereGeometry(11, 16, 12), bodyMat, 0, 16, -7);          // head
+  add(neck, new THREE.BoxGeometry(14, 10, 14), bodyMat, 0, 13, -18);            // snout
   for (const sx of [-1, 1]) {
-    add(model, new THREE.SphereGeometry(3.6, 10, 8), mat(0xffffff), sx * 7, 31, -26);
-    add(model, new THREE.SphereGeometry(1.8, 8, 6), mat(0x0e0b1f), sx * 7, 31, -29);
+    add(neck, new THREE.SphereGeometry(3.6, 10, 8), mat(0xffffff), sx * 7, 20, -13);   // eyes
+    add(neck, new THREE.SphereGeometry(1.8, 8, 6), mat(0x0e0b1f), sx * 7, 20, -16);
   }
-  for (let i = 0; i < 4; i++) {                    // back plates along the spine
-    const p = add(model, new THREE.ConeGeometry(4.5 - i * 0.5, 9, 4), pinkMat, 0, 30, -10 + i * 8);
+  for (let i = 0; i < 4; i++) {                    // back plates along the spine (low enough to clear a gate)
+    const p = add(model, new THREE.ConeGeometry(4.2 - i * 0.5, 7, 4), pinkMat, 0, 28.5, -10 + i * 8);
     p.rotation.y = Math.PI / 4;
   }
   const tailPivot = new THREE.Group();             // tail wags around where it joins the body
@@ -148,6 +159,7 @@ export function createThree(canvas2d, stage) {
     return g;
   }
   const meshes = new Map();                          // game obstacle -> its mesh
+  let duck = 0, lastT = 0;                           // eased duck amount; game time of the previous frame
 
   function draw(v) {
     ctx2d.clearRect(0, 0, W, H);                     // the 2D canvas is transparent here: HUD only
@@ -160,11 +172,13 @@ export function createThree(canvas2d, stage) {
     const running = p.z === 0 && v.state === 'play';
     const run = running ? Math.sin(v.phase * 22) : 0;
     dino.position.set(px, lift, 0);
-    model.scale.set(p.ducking ? 1.1 : 1, p.ducking ? 0.6 : 1, p.ducking ? 1.1 : 1);
-    bodyMat.color.set(p.ducking ? 0x3fc9a5 : 0x5ef2c8);
+    const dt = Math.min(0.1, Math.max(0, v.t - lastT)); lastT = v.t;
+    duck += ((p.ducking ? 1 : 0) - duck) * Math.min(1, dt * DUCK_SPEED);     // 0 = standing, 1 = fully ducked
+    neck.rotation.x = DUCK_ANGLE * duck;
+    neck.position.y = 20 + (running ? Math.abs(run) * 1.5 : 0);
+    model.position.y = -DUCK_CROUCH * duck;
     legs[0].position.z = 2 + run * 5; legs[1].position.z = 2 - run * 5;
     tailPivot.rotation.y = Math.sin(v.phase * 9) * 0.35;
-    head.position.y = 27 + (running ? Math.abs(run) * 1.5 : 0);
     const ss = Math.max(0.5, 1 - p.z / 250);
     shadow.position.x = px; shadow.scale.set(ss * DINO_SCALE, ss * DINO_SCALE, 1);
 

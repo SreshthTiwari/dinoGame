@@ -1,12 +1,12 @@
-// Real 3D renderer (three.js) with a chase camera. Loaded lazily (see main.js), so the 1.2 MB
-// library only downloads if you switch to it. Same view snapshot as the fake-3D renderer.
+// Real 3D renderer (three.js) with a chase camera. It only reads the view snapshot from
+// game.getView(); the game rules live in game.js.
 //
 // Scene units are the game's pixels. Game world (x across, y along the road, dino at y = PY)
 // maps to scene (x - 240, up, y - PY): the dino sits at the origin facing -z, away from the
 // camera, and obstacles come toward +z.
 import * as THREE from '../../vendor/three/three.module.js';
 import { LANES, PY } from '../game.js';
-import { THEMES, THEME_ORDER, DEFAULT_THEME, AUTO, blendTheme } from './themes.js';
+import { THEMES, THEME_ORDER, DEFAULT_THEME, AUTO, blendTheme, mixColor } from './themes.js';
 
 export const THREE_DEFAULTS = { height: 260, distance: 480, lookAhead: 400, fov: 60, follow: 0.6 };
 // height / distance = where the camera sits above / behind the dino, lookAhead = how far down the
@@ -137,6 +137,9 @@ export function createThree(canvas2d, stage) {
   // ---- the dino: built from simple shapes, facing -z so the camera sees its back ----
   const mat = c => new THREE.MeshLambertMaterial({ color: c });
   const bodyMat = mat(0xffffff), darkMat = mat(0xffffff), pinkMat = mat(0xffffff);   // coloured by the theme
+  const eyeMat = mat(0xffffff), pupilMat = mat(0x0e0b1f);
+  const dinoMats = [bodyMat, darkMat, pinkMat, eyeMat, pupilMat];
+  for (const m of dinoMats) m.transparent = true;    // so the ghost powerup can fade the dino
   const dino = new THREE.Group();
   const model = new THREE.Group();               // the dino as a unit (sinks a little when ducking)
   dino.add(model);
@@ -154,8 +157,8 @@ export function createThree(canvas2d, stage) {
   add(neck, new THREE.SphereGeometry(11, 16, 12), bodyMat, 0, 16, -7);          // head
   add(neck, new THREE.BoxGeometry(14, 10, 14), bodyMat, 0, 13, -18);            // snout
   for (const sx of [-1, 1]) {
-    add(neck, new THREE.SphereGeometry(3.6, 10, 8), mat(0xffffff), sx * 7, 20, -13);   // eyes
-    add(neck, new THREE.SphereGeometry(1.8, 8, 6), mat(0x0e0b1f), sx * 7, 20, -16);
+    add(neck, new THREE.SphereGeometry(3.6, 10, 8), eyeMat, sx * 7, 20, -13);   // eyes
+    add(neck, new THREE.SphereGeometry(1.8, 8, 6), pupilMat, sx * 7, 20, -16);
   }
   for (let i = 0; i < 4; i++) {                    // back plates along the spine (low enough to clear a gate)
     const p = add(model, new THREE.ConeGeometry(4.2 - i * 0.5, 7, 4), pinkMat, 0, 28.5, -10 + i * 8);
@@ -170,29 +173,99 @@ export function createThree(canvas2d, stage) {
   dino.scale.setScalar(DINO_SCALE);
   scene.add(dino);
 
+  // shield: a glowing bubble round the dino (it expands and fades when it pops)
+  const bubbleMat = new THREE.MeshBasicMaterial({ color: 0x4de8ff, transparent: true, opacity: 0.16, depthWrite: false });
+  const bubbleWireMat = new THREE.MeshBasicMaterial({ color: 0x9ff3ff, wireframe: true, transparent: true, opacity: 0.35 });
+  const bubble = new THREE.Mesh(new THREE.SphereGeometry(30, 20, 14), bubbleMat);
+  bubble.position.y = 18; bubble.visible = false;
+  const bubbleWire = new THREE.Mesh(new THREE.IcosahedronGeometry(30.5, 1), bubbleWireMat);
+  bubble.add(bubbleWire);
+  dino.add(bubble);
+
   const shadow = new THREE.Mesh(new THREE.CircleGeometry(20, 20), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.4 }));
   shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.6;
   scene.add(shadow);
 
   // ---- obstacles ----
-  const spikeGeo = new THREE.ConeGeometry(12, 22, 4), spikeMat = mat(0xffffff);
-  const postGeo = new THREE.BoxGeometry(8, 58, 8), postMat = mat(0xffffff);
-  const barGeo = new THREE.BoxGeometry(96, 12, 10);
+  // Colours come from the theme (see applyTheme). Low obstacles stay under ~32 units tall, which
+  // matches BLOCK_CLEAR in game.js (40 x the 0.8 jump scale); the gate bars start at 44.
+  const crystalMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const rockMat = new THREE.MeshLambertMaterial({ color: 0x888888, flatShading: true });
+  const postMat = mat(0xffffff);
+  const trimMat = new THREE.MeshBasicMaterial({ color: 0xffffff });              // glowing stripes
   const barMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-  function makeBlock() {
+  const laserMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const laserGlowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false });
+  const crystalGeo = new THREE.OctahedronGeometry(1), rockGeo = new THREE.DodecahedronGeometry(1);
+  const postGeo = new THREE.BoxGeometry(8, 58, 8), barGeo = new THREE.BoxGeometry(96, 12, 10);
+  const rnd = (a, b) => a + Math.random() * (b - a);
+
+  function makeCrystals() {                          // a cluster of glowing crystals
     const g = new THREE.Group();
-    for (const sx of [-1, 0, 1]) {
-      const s = add(g, spikeGeo, spikeMat, sx * 24, 11, 0);
-      s.rotation.y = Math.PI / 4;
+    for (const [x, z, h, r] of [[0, 0, 32, 12], [-26, 3, 20, 9], [26, 3, 23, 10], [-12, 12, 16, 8], [14, 10, 26, 9], [-3, -11, 19, 8]]) {
+      const c = add(g, crystalGeo, crystalMat, x, h / 2, z);
+      c.scale.set(r, h / 2, r);
+      c.rotation.set(0, rnd(0, 3), rnd(-0.18, 0.18));
     }
     return g;
   }
-  function makeBeam() {
+  function makeRocks() {                             // jagged boulders
+    const g = new THREE.Group();
+    for (const [x, z, r] of [[-23, 0, 17], [6, 3, 19], [28, -2, 14], [-4, -13, 11]]) {
+      const k = add(g, rockGeo, rockMat, x, r * 0.55, z);
+      k.scale.set(r, r * 0.75, r * 0.9);
+      k.rotation.set(rnd(0, 3), rnd(0, 3), rnd(0, 3));
+    }
+    return g;
+  }
+  function makePillar() {                            // tall: no jumping or ducking this, only a lane change
+    const g = new THREE.Group();
+    add(g, new THREE.BoxGeometry(60, 12, 46), postMat, 0, 6, 0);                 // base
+    add(g, new THREE.BoxGeometry(44, 104, 32), postMat, 0, 64, 0);               // shaft
+    add(g, new THREE.BoxGeometry(58, 10, 44), postMat, 0, 121, 0);               // cap
+    for (const y of [32, 64, 96]) add(g, new THREE.BoxGeometry(46, 3, 34), trimMat, 0, y, 0);   // glowing bands
+    return g;
+  }
+  function makeBar() {                               // the classic gate
     const g = new THREE.Group();
     for (const sx of [-1, 1]) add(g, postGeo, postMat, sx * 44, 29, 0);
     add(g, barGeo, barMat, 0, 52, 0);                // bar bottom at 46: the dino has to duck under it
     return g;
   }
+  function makeLaser() {                             // a laser between two emitters
+    const g = new THREE.Group();
+    for (const sx of [-1, 1]) {
+      add(g, postGeo, postMat, sx * 44, 29, 0);
+      add(g, new THREE.SphereGeometry(7, 12, 8), laserMat, sx * 44, 52, 0);      // emitter
+    }
+    const core = add(g, new THREE.CylinderGeometry(2.5, 2.5, 88, 8), laserMat, 0, 52, 0);
+    const glow = add(g, new THREE.CylinderGeometry(8, 8, 88, 12), laserGlowMat, 0, 52, 0);
+    core.rotation.z = glow.rotation.z = Math.PI / 2;
+    return g;
+  }
+  const MAKERS = { 'block/crystal': makeCrystals, 'block/rock': makeRocks, 'pillar/pillar': makePillar, 'beam/bar': makeBar, 'beam/laser': makeLaser };
+
+  // ---- powerup pickups: floating, spinning gems (fixed colours, whatever the theme) ----
+  const glowMat = c => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false });
+  function makeShieldPickup() {
+    const g = new THREE.Group();
+    add(g, new THREE.OctahedronGeometry(10), new THREE.MeshLambertMaterial({ color: 0x4de8ff, emissive: 0x1a8fa8 }), 0, 0, 0);
+    const ring = add(g, new THREE.TorusGeometry(17, 1.8, 8, 28), new THREE.MeshBasicMaterial({ color: 0x9ff3ff }), 0, 0, 0);
+    ring.rotation.x = 1.2;
+    add(g, new THREE.SphereGeometry(24, 14, 10), glowMat(0x4de8ff), 0, 0, 0);
+    return g;
+  }
+  function makeGhostPickup() {
+    const g = new THREE.Group();
+    const white = new THREE.MeshLambertMaterial({ color: 0xf1e9ff, emissive: 0x5a4a99 });
+    add(g, new THREE.SphereGeometry(11, 16, 12), white, 0, 3, 0);
+    add(g, new THREE.CylinderGeometry(11, 13, 11, 14), white, 0, -3, 0);
+    for (const sx of [-1, 1]) add(g, new THREE.SphereGeometry(2.4, 8, 6), mat(0x1a1030), sx * 4.2, 4, 9.4);   // eyes face the camera (+z)
+    add(g, new THREE.SphereGeometry(24, 14, 10), glowMat(0xb79cff), 0, 0, 0);
+    return g;
+  }
+  const PICKUP_MAKERS = { shield: makeShieldPickup, ghost: makeGhostPickup };
+
   // ---- themes ----
   // `choice` is what the player picked: a theme id, or 'auto' (a new theme every AUTO.seconds of a run).
   // `now` is the theme that is on screen right now (part-way between two while a fade runs) and
@@ -208,7 +281,10 @@ export function createThree(canvas2d, stage) {
     scene.fog.color.set(t.fog); scene.fog.near = t.fogNear; scene.fog.far = t.fogFar;
     edge.color.set(t.edge);
     bodyMat.color.set(t.dino.body); darkMat.color.set(t.dino.dark); pinkMat.color.set(t.dino.plates);
-    spikeMat.color.set(t.spike); postMat.color.set(t.post);
+    crystalMat.color.set(t.spike); crystalMat.emissive.set(t.spike).multiplyScalar(0.7);
+    rockMat.color.set(mixColor(t.post, '#8a8a8a', 0.55));
+    postMat.color.set(t.post); trimMat.color.set(t.edge);
+    laserMat.color.set(t.spike); laserGlowMat.color.set(t.spike);
     barMat.color.set(t.bar); barMat.emissive.set(t.barGlow);
     ambient.color.set(t.light.ambient[0]); ambient.intensity = t.light.ambient[1];
     sun.color.set(t.light.sun[0]); sun.intensity = t.light.sun[1];
@@ -240,7 +316,9 @@ export function createThree(canvas2d, stage) {
   }
 
   const meshes = new Map();                          // game obstacle -> its mesh
+  const pickupMeshes = new Map();                    // game pickup -> its mesh
   let duck = 0, lastT = 0;                           // eased duck amount; game time of the previous frame
+  let ghostFade = 1;                                 // 1 = solid dino, lower = ghost
 
   function draw(v) {
     ctx2d.clearRect(0, 0, W, H);                     // the 2D canvas is transparent here: HUD only
@@ -272,16 +350,45 @@ export function createThree(canvas2d, stage) {
     const seen = new Set();
     for (const o of v.obstacles) {
       let m = meshes.get(o);
-      if (!m) { m = o.kind === 'beam' ? makeBeam() : makeBlock(); scene.add(m); meshes.set(o, m); }
+      if (!m) { m = MAKERS[`${o.kind}/${o.style}`](); scene.add(m); meshes.set(o, m); }
       m.position.set(LANES[o.lane] - CX, 0, o.y - PY);
       seen.add(o);
     }
     for (const [o, m] of meshes) if (!seen.has(o)) { scene.remove(m); meshes.delete(o); }
+    laserGlowMat.opacity = 0.22 + 0.1 * Math.sin(v.t * 14);          // lasers hum
+
+    const seenP = new Set();
+    for (const q of v.pickups) {
+      let m = pickupMeshes.get(q);
+      if (!m) { m = PICKUP_MAKERS[q.type](); m.userData.phase = Math.random() * 6; m.scale.setScalar(1.5); scene.add(m); pickupMeshes.set(q, m); }
+      m.position.set(LANES[q.lane] - CX, 42 + Math.sin(v.t * 3 + m.userData.phase) * 5, q.y - PY);
+      m.rotation.y = v.t * 2 + m.userData.phase;
+      seenP.add(q);
+    }
+    for (const [q, m] of pickupMeshes) if (!seenP.has(q)) { scene.remove(m); pickupMeshes.delete(q); }
+
+    // powerup effects on the dino: shield bubble (pops outward), ghost (see-through, blinks as it runs out)
+    const sincePop = v.t - v.shieldBreakT;
+    if (v.shield) {
+      bubble.visible = true; bubble.scale.setScalar(1 + 0.03 * Math.sin(v.t * 6));
+      bubbleMat.opacity = 0.16; bubbleWireMat.opacity = 0.35; bubbleWire.rotation.y = v.t;
+    } else if (v.shieldBreakT >= 0 && sincePop < 0.45) {
+      const k = sincePop / 0.45;
+      bubble.visible = true; bubble.scale.setScalar(1 + k * 1.2);
+      bubbleMat.opacity = 0.3 * (1 - k); bubbleWireMat.opacity = 0.5 * (1 - k);
+    } else bubble.visible = false;
+    const ghostTarget = v.ghost > 0 ? (v.ghost < 1.2 && Math.floor(v.t * 10) % 2 ? 0.8 : 0.38) : 1;
+    ghostFade += (ghostTarget - ghostFade) * Math.min(1, dt * 12);
+    for (const m of dinoMats) { m.opacity = ghostFade; m.depthWrite = ghostFade > 0.97; }
 
     const cx = px * cam.follow;
     camera.position.set(cx, cam.height, cam.distance);
     camera.lookAt(cx, 20, -cam.lookAhead);
-    if (cam.fov !== lastFov) { camera.fov = lastFov = cam.fov; camera.updateProjectionMatrix(); }
+    // breather: the lens opens up a little while the world slows, for a calmer, wider view
+    let breatherK = 0;
+    if (v.breather) { const e = Math.min(v.breather.length - v.breather.left, v.breather.left, 1); breatherK = e * e * (3 - 2 * e); }
+    const fovNow = cam.fov + 8 * breatherK;
+    if (fovNow !== lastFov) { camera.fov = lastFov = fovNow; camera.updateProjectionMatrix(); }
     renderer.render(scene, camera);
   }
 

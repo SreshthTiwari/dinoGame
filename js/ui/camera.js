@@ -8,14 +8,13 @@ export function createCameraPanel() {
   function setRenderer(r) {
     const key = `blip-cam-${r.name}`;
     try {
-      const saved = localStorage.getItem(key) ?? (r.name === 'fake3d' ? localStorage.getItem('blip-cam') : null);
-      Object.assign(r.cam, JSON.parse(saved || '{}'));
+      Object.assign(r.cam, JSON.parse(localStorage.getItem(key) || '{}'));
     } catch {}
     const save = () => { try { localStorage.setItem(key, JSON.stringify(r.cam)); } catch {} };
 
     panel.replaceChildren();
     const title = document.createElement('strong');
-    title.textContent = r.name === 'three' ? 'Camera (three.js)' : 'Camera (fake 3D)';
+    title.textContent = 'Camera';
     panel.append(title);
     const inputs = {};
     for (const sl of r.sliders) {

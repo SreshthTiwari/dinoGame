@@ -8,7 +8,7 @@
 - [x] Planking version of the game: shoulder taps + pushups (first pass, untested with a real camera)
 - [ ] Plank mode: detect that the user is actually in a plank, and pause when they drop out
 - [ ] Make the plank controls better (tap and pushup detection feel, thresholds, calibration)
-- [ ] Implement power ups
+- [x] Implement power ups (shield, ghost) and a breather; more obstacle types (crystals, rocks, pillars, lasers). More powerups and obstacles could come later
 - [ ] Work out how to make it a phone app
 - [ ] Integrate bio sensors
   - [ ] Heart rate sensor

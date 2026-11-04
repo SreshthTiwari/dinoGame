@@ -11,6 +11,30 @@ export function drawHud(ctx, v) {
   ctx.fillText(`LV ${v.level}`, W / 2, 30);
 
   ctx.textAlign = 'center';
+
+  // active powerups and the breather, as small chips under the level
+  if (state === 'play') {
+    const chips = [];
+    if (v.shield) chips.push({ text: 'SHIELD', color: '#4de8ff' });
+    if (v.ghost > 0) chips.push({ text: `GHOST ${v.ghost.toFixed(1)}`, color: '#c9b6ff' });
+    ctx.font = 'bold 14px monospace';
+    let y = 46;
+    for (const c of chips) {
+      const w = ctx.measureText(c.text).width + 22;
+      ctx.fillStyle = 'rgba(14,11,31,0.6)'; ctx.beginPath(); ctx.roundRect(W / 2 - w / 2, y, w, 22, 11); ctx.fill();
+      ctx.fillStyle = c.color; ctx.fillText(c.text, W / 2, y + 16);
+      y += 28;
+    }
+    if (v.breather) {                                  // a break: the world is slowed down, with a timer bar
+      const { left, length } = v.breather, fade = Math.min(1, left, length - left);
+      ctx.globalAlpha = Math.max(0, Math.min(1, fade));
+      ctx.fillStyle = '#9ff3d0'; ctx.font = 'bold 18px monospace'; ctx.fillText('BREATHER', W / 2, y + 22);
+      ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fillRect(W / 2 - 60, y + 30, 120, 4);
+      ctx.fillStyle = '#9ff3d0'; ctx.fillRect(W / 2 - 60, y + 30, 120 * (left / length), 4);
+      ctx.globalAlpha = 1;
+    }
+  }
+
   if (state === 'start') {
     ctx.fillStyle = '#e8e4ff'; ctx.font = 'bold 40px monospace'; ctx.fillText('BLIP DASH', W / 2, 200);
     ctx.font = '15px monospace'; ctx.fillStyle = '#8c82c8';

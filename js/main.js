@@ -6,7 +6,7 @@ import { extractPlankFeatures, createPlankSmoother, createPlankCalibrator, creat
 import { drawPreview } from './ui/preview.js';
 import { createCalibrationUI } from './ui/calibration.js';
 import { createCameraPanel } from './ui/camera.js';
-import { createFake3D } from './render/fake3d.js';
+import { createThree } from './render/three.js';
 import { drawHud } from './render/hud.js';
 
 const canvas = document.getElementById('c');
@@ -26,65 +26,39 @@ const game = createGame(canvas, { canStart });
 game.setPlank(plankMode);
 const camPanel = createCameraPanel();
 
-// Renderers: 'fake3d' (2D canvas with hand-made perspective) and 'three' (real 3D, loaded on demand).
-// Real 3D is the default. R switches; a choice you make is remembered, and ?render=three or
-// ?render=fake3d overrides it. (Only an explicit switch is saved, never the default.)
+// Renderer: three.js (real 3D). The 2D canvas on top of it draws the HUD and takes touch input.
 const stage = document.getElementById('stage');
-const renderers = { fake3d: createFake3D(canvas) };
-let renderer = renderers.fake3d;
-async function setRenderer(name, remember = false) {
-  if (!renderers[name]) {
-    try {
-      const { createThree } = await import('./render/three.js');
-      renderers[name] = createThree(canvas, stage);
-      renderers[name].onThemeChange = () => { if (renderer === renderers[name]) showTheme(); };
-    } catch (err) {
-      console.error(err);
-      ui.toast('Could not start the three.js renderer (see console)');
-      return;
-    }
-  }
-  renderer.deactivate();
-  renderer = renderers[name];
-  renderer.activate();
-  camPanel.setRenderer(renderer);
-  showTheme();
-  if (remember) try { localStorage.setItem('blip-renderer-choice', name); } catch {}
+let renderer;
+try {
+  renderer = createThree(canvas, stage);
+  renderer.onThemeChange = () => showTheme();
+} catch (err) {                                      // no WebGL: keep the game running (blank scene) and say why
+  console.error(err);
+  const ctx2d = canvas.getContext('2d');
+  renderer = { draw() { ctx2d.fillStyle = '#0e0b1f'; ctx2d.fillRect(0, 0, canvas.width, canvas.height); } };
+  setTimeout(() => ui.toast('3D graphics (WebGL) is not available in this browser'), 500);
 }
-// Theme button (also the T key): cycles the colour theme. Themes only exist in the three.js look,
-// so on the fake-3D look the button says so and switches to three.js when pressed.
+if (renderer.sliders) camPanel.setRenderer(renderer);
+
+// Theme button (also the T key): cycles the colour theme, ending with Auto.
 const themeBtn = document.getElementById('themeBtn');
 function showTheme() {
-  const list = renderer.themes;
   themeBtn.replaceChildren();
-  const dot = document.createElement('i');
-  if (!list) {
-    dot.style.background = '#8c82c8';
-    themeBtn.append(dot, 'Fake 3D - click for real 3D + themes (T)');
-    return;
-  }
+  if (!renderer.themes) { themeBtn.classList.add('hidden'); return; }
   const auto = renderer.theme === 'auto', now = renderer.current;      // in auto, show the world that's playing
+  const dot = document.createElement('i');
   dot.style.background = now.accent;
   themeBtn.append(dot, `${auto ? 'Auto: ' : ''}${now.label}  (T)`);
 }
-async function cycleTheme() {
-  if (!renderer.themes) {
-    await setRenderer('three', true);
-    if (!renderer.themes) return;                    // three.js failed to start (toast already shown)
-    return ui.toast('Real 3D - press T to change theme');
-  }
+function cycleTheme() {
   const list = renderer.themes;
+  if (!list) return;
   const i = list.findIndex(t => t.id === renderer.theme);
   renderer.setTheme(list[(i + 1) % list.length].id);
   showTheme();
 }
 themeBtn.addEventListener('click', () => { cycleTheme(); themeBtn.blur(); });
-{
-  let want = new URLSearchParams(location.search).get('render');
-  try { want ??= localStorage.getItem('blip-renderer-choice'); } catch {}
-  showTheme();
-  setRenderer(want === 'fake3d' ? 'fake3d' : 'three');
-}
+showTheme();
 attachKeyboard(canvas, game);
 
 // The first start request kicks off camera setup; the game only starts once calibration is done.
@@ -156,10 +130,6 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyV') ui.toggleMini();
   if (e.code === 'KeyH') camPanel.toggle();
   if (e.code === 'KeyT') cycleTheme();
-  if (e.code === 'KeyR') {
-    const next = renderer.name === 'fake3d' ? 'three' : 'fake3d';
-    setRenderer(next, true).then(() => ui.toast(next === 'three' ? 'three.js 3D' : 'Fake 3D'));
-  }
   if (e.code === 'KeyD') debug = !debug;
 });
 

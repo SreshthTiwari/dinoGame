@@ -1,6 +1,6 @@
-# Blip Dash
+# dinogame
 
-3D runner: switch lanes, hop crystals and rocks, duck under gates and lasers, dodge pillars. Play with your body (webcam + MediaPipe) or the keyboard.
+dinogame is a 3D runner starring a dino: switch lanes, hop crystals and rocks, duck under gates and lasers, dodge pillars. Play with your body (webcam + MediaPipe) or the keyboard.
 
 ## Run
 

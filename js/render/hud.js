@@ -36,7 +36,7 @@ export function drawHud(ctx, v) {
   }
 
   if (state === 'start') {
-    ctx.fillStyle = '#e8e4ff'; ctx.font = 'bold 40px monospace'; ctx.fillText('BLIP DASH', W / 2, 200);
+    ctx.fillStyle = '#e8e4ff'; ctx.font = 'bold 40px monospace'; ctx.fillText('DINOGAME', W / 2, 200);
     ctx.font = '15px monospace'; ctx.fillStyle = '#8c82c8';
     if (plank) {
       ctx.fillText('PLANK MODE', W / 2, 225);

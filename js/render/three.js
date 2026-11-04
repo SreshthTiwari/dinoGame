@@ -6,6 +6,7 @@
 // camera, and obstacles come toward +z.
 import * as THREE from '../../vendor/three/three.module.js';
 import { LANES, PY, SPAWN_AHEAD } from '../game.js';
+import { createScenery } from './scenery.js';
 import { THEMES, THEME_ORDER, DEFAULT_THEME, AUTO, blendTheme, mixColor } from './themes.js';
 
 export const THREE_DEFAULTS = { height: 160, distance: 330, lookAhead: 460, fov: 58, follow: 1 };
@@ -134,6 +135,8 @@ export function createThree(canvas2d, stage) {
     e.position.set(sx * ROAD_W / 2, 1.5, (NEAR - FAR) / 2);
     scene.add(e);
   }
+
+  const scenery = createScenery(scene);              // trees, towers, cacti... by theme, along both sides of the road
 
   // ---- the dino: built from simple shapes, facing -z so the camera sees its back ----
   const mat = c => new THREE.MeshLambertMaterial({ color: c });
@@ -267,6 +270,58 @@ export function createThree(canvas2d, stage) {
   }
   const PICKUP_MAKERS = { shield: makeShieldPickup, ghost: makeGhostPickup };
 
+  // ---- hit feedback: particles, camera shake, screen flash (driven by game events, see main.js) ----
+  const NP = 420;                                    // particle pool: a ring buffer of tiny glowing points
+  const pPos = new Float32Array(NP * 3), pCol = new Float32Array(NP * 3), pBase = new Float32Array(NP * 3);
+  const pVel = new Float32Array(NP * 3), pLife = new Float32Array(NP), pMax = new Float32Array(NP);
+  const pGeo = new THREE.BufferGeometry();
+  pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3).setUsage(THREE.DynamicDrawUsage));
+  pGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3).setUsage(THREE.DynamicDrawUsage));
+  const points = new THREE.Points(pGeo, new THREE.PointsMaterial({ size: 9, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  points.frustumCulled = false;
+  scene.add(points);
+  let pNext = 0;
+  // n particles at world (wx, wy) and height h, flying outward at about `speed`; they fade over `life` seconds
+  function burst(wx, wy, h, color, { n = 24, speed = 170, up = 110, life = 0.7 } = {}) {
+    const c = new THREE.Color(color);
+    for (let i = 0; i < n; i++) {
+      const k = pNext; pNext = (pNext + 1) % NP;
+      const a = Math.random() * Math.PI * 2, sp = speed * (0.35 + Math.random() * 0.65);
+      pPos[k * 3] = wx - CX + (Math.random() - 0.5) * 12; pPos[k * 3 + 1] = h + Math.random() * 8; pPos[k * 3 + 2] = wy - PY + (Math.random() - 0.5) * 12;
+      pVel[k * 3] = Math.cos(a) * sp; pVel[k * 3 + 1] = up * (0.3 + Math.random()); pVel[k * 3 + 2] = Math.sin(a) * sp * 0.8;
+      pBase[k * 3] = c.r; pBase[k * 3 + 1] = c.g; pBase[k * 3 + 2] = c.b;
+      pLife[k] = pMax[k] = life * (0.6 + Math.random() * 0.4);
+    }
+  }
+  function stepParticles(dt, roadDz) {               // roadDz: how far the road moved this frame, so particles ride along with it
+    for (let k = 0; k < NP; k++) {
+      const i = k * 3;
+      if (pLife[k] <= 0) { pCol[i] = pCol[i + 1] = pCol[i + 2] = 0; continue; }
+      pLife[k] -= dt;
+      pVel[i + 1] -= 460 * dt;
+      pPos[i] += pVel[i] * dt; pPos[i + 1] += pVel[i + 1] * dt; pPos[i + 2] += pVel[i + 2] * dt + roadDz;
+      if (pPos[i + 1] < 0) { pPos[i + 1] = 0; pVel[i + 1] *= -0.3; pVel[i] *= 0.7; pVel[i + 2] *= 0.7; }
+      const f = Math.max(0, pLife[k] / pMax[k]);     // additive blending: darker = more see-through
+      pCol[i] = pBase[i] * f; pCol[i + 1] = pBase[i + 1] * f; pCol[i + 2] = pBase[i + 2] * f;
+    }
+    pGeo.attributes.position.needsUpdate = true; pGeo.attributes.color.needsUpdate = true;
+  }
+
+  let shakeAmp = 0, shakeT = 0, shakeDur = 1;
+  const shake = (amp, secs) => { shakeAmp = Math.max(shakeAmp * (shakeT / shakeDur), amp); shakeT = shakeDur = secs; };
+
+  const flashEl = document.createElement('div');     // a colour wash over the whole game that fades out
+  flashEl.id = 'flash';
+  stage.append(flashEl);
+  function flash(color, strength = 0.4, secs = 0.4) {
+    flashEl.style.transition = 'none';
+    flashEl.style.background = color; flashEl.style.opacity = String(strength);
+    void flashEl.offsetWidth;                        // restart the transition
+    flashEl.style.transition = `opacity ${secs}s ease-out`; flashEl.style.opacity = '0';
+  }
+
+  let deadT = 0, lastScroll = 0;                     // time since the dino was hit (it gets knocked over)
+
   // ---- themes ----
   // `choice` is what the player picked: a theme id, or 'auto' (a new theme every AUTO.seconds of a run).
   // `now` is the theme that is on screen right now (part-way between two while a fade runs) and
@@ -292,6 +347,7 @@ export function createThree(canvas2d, stage) {
   }
   function goTo(id, seconds) {                       // head for theme `id`, fading over `seconds` (0 = at once)
     targetId = id;
+    scenery.setTheme(id);                            // new props start arriving from the horizon
     if (seconds > 0) fade = { from: now, to: THEMES[id], k: 0, secs: seconds };
     else { fade = null; applyTheme(THEMES[id]); }
     onThemeChange?.();
@@ -332,6 +388,10 @@ export function createThree(canvas2d, stage) {
     const spawnDist = Math.hypot(cam.height, cam.distance + SPAWN_AHEAD);
     scene.fog.far = spawnDist * 0.97; scene.fog.near = scene.fog.far * FOG_START;
 
+    const roadDz = Math.max(0, Math.min(60, v.scroll - lastScroll)); lastScroll = v.scroll;
+    stepParticles(dt, roadDz);
+
+    scenery.update(v.scroll);
     groundTex.offset.y = v.scroll / GRID;
     roadTex.offset.y = v.scroll / DASH;
 
@@ -339,7 +399,11 @@ export function createThree(canvas2d, stage) {
     const px = p.x - CX, lift = p.z * JUMP_VIS;
     const running = p.z === 0 && v.state === 'play';
     const run = running ? Math.sin(v.phase * 22) : 0;
-    dino.position.set(px, lift, 0);
+    // hit: the dino pops up and is knocked over onto its side, away from the middle of the road
+    if (v.state === 'dead') deadT += dt; else deadT = 0;
+    const fall = Math.min(1, deadT / 0.35), knock = fall * fall * (3 - 2 * fall);
+    dino.rotation.z = (p.lane === 0 ? 1 : -1) * 1.45 * knock;
+    dino.position.set(px, lift + Math.sin(Math.min(1, deadT / 0.4) * Math.PI) * 24, 0);
     duck += ((p.ducking ? 1 : 0) - duck) * Math.min(1, dt * DUCK_SPEED);     // 0 = standing, 1 = fully ducked
     neck.rotation.x = DUCK_ANGLE * duck;
     neck.position.y = 20 + (running ? Math.abs(run) * 1.5 : 0);
@@ -384,7 +448,9 @@ export function createThree(canvas2d, stage) {
     for (const m of dinoMats) { m.opacity = ghostFade; m.depthWrite = ghostFade > 0.97; }
 
     const cx = px * cam.follow;
-    camera.position.set(cx, cam.height, cam.distance);
+    shakeT = Math.max(0, shakeT - dt);
+    const sk = shakeAmp * (shakeT / shakeDur) ** 2;
+    camera.position.set(cx + (Math.random() - 0.5) * 2 * sk, cam.height + (Math.random() - 0.5) * 2 * sk, cam.distance);
     camera.lookAt(cx, 20, -cam.lookAhead);
     // breather: the lens opens up a little while the world slows, for a calmer, wider view
     let breatherK = 0;
@@ -397,6 +463,7 @@ export function createThree(canvas2d, stage) {
   return {
     name: 'three', cam, defaults: THREE_DEFAULTS, sliders: SLIDERS,
     // what the picker cycles through: every theme, then Auto
+    fx: { burst, shake, flash },
     themes: [...THEME_ORDER.map(id => ({ id, label: THEMES[id].label, accent: THEMES[id].edge })), { id: AUTO.id, label: AUTO.label }],
     get theme() { return choice; },                  // the picked id, or 'auto'
     get current() { return { id: targetId, label: THEMES[targetId].label, accent: THEMES[targetId].edge }; },   // what's showing (or fading in)

@@ -67,6 +67,14 @@ export function createGame(canvas, { canStart = () => true } = {}) {
   const jumpSources = {};              // same for "keep jumping": while held, the dino jumps again on every landing
   const jumpHeld = () => Object.values(jumpSources).some(Boolean);
 
+  // Events for sound and hit effects: game.on('die', fn). Types and their data:
+  //   start, jump, duck, level {level}, laneChange {dir, x}, pickup {type, x, y}, shieldBreak {x, y},
+  //   ghostEnd, breatherStart, breatherEnd, die {x, score}. (x is the world x, y the world y.)
+  const listeners = {};
+  const on = (type, fn) => { (listeners[type] ??= []).push(fn); };
+  const emit = (type, data) => { for (const fn of listeners[type] ?? []) fn(data); };
+  let wasDuck = false, lastLevel = 1;
+
   function newPlayer() { return { lane: 1, x: LANES[1], z: 0, vz: 0, duckT: 0 }; }
   player = newPlayer(); obstacles = []; pickups = []; score = 0; speed = START_SPEED;
 
@@ -74,19 +82,28 @@ export function createGame(canvas, { canStart = () => true } = {}) {
     player = newPlayer(); obstacles = []; pickups = [];
     score = 0; speed = START_SPEED; elapsed = 0; spawnIn = 0.3; state = 'play';       // (the first row still has the whole road to cross)
     shield = false; ghostT = 0; graceT = 0; pickupIn = PICKUP_FIRST; sinceBreak = 0; breather = null;
+    wasDuck = false; lastLevel = 1;
+    emit('start');
   }
   function start() { if (state !== 'play' && canStart()) reset(); }
 
   function jump() {
     if (state !== 'play') return start();
-    if (player.z === 0) player.vz = JUMP_V;
+    if (player.z === 0) { player.vz = JUMP_V; emit('jump'); }
+  }
+  function changeLane(lane) {
+    lane = Math.max(0, Math.min(2, lane));
+    if (lane === player.lane) return;
+    const dir = Math.sign(lane - player.lane);
+    player.lane = lane;
+    emit('laneChange', { dir, x: player.x });
   }
   function move(d) {
     if (state !== 'play') return start();
-    player.lane = Math.max(0, Math.min(2, player.lane + d));
+    changeLane(player.lane + d);
   }
   function setLane(lane) {
-    if (state === 'play') player.lane = Math.max(0, Math.min(2, lane));
+    if (state === 'play') changeLane(lane);
   }
   function duckFor(seconds) {
     if (state === 'play') player.duckT = seconds; else start();
@@ -121,6 +138,7 @@ export function createGame(canvas, { canStart = () => true } = {}) {
   function die() {
     state = 'dead';
     if (score > best) { best = Math.floor(score); localStorage.setItem('blip-td-best', best); }
+    emit('die', { x: player.x, score: Math.floor(score) });
   }
 
   function update(dt) {
@@ -133,12 +151,12 @@ export function createGame(canvas, { canStart = () => true } = {}) {
     let pace = 1;
     if (breather) {
       breather.t += dt;
-      if (breather.t >= BREATHER_LENGTH) { breather = null; sinceBreak = 0; }
+      if (breather.t >= BREATHER_LENGTH) { breather = null; sinceBreak = 0; emit('breatherEnd'); }
       else {
         const e = Math.min(breather.t, BREATHER_LENGTH - breather.t, 1);   // 1 s ease in and out
         pace = 1 - (1 - BREATHER_SLOW) * e * e * (3 - 2 * e);
       }
-    } else if ((sinceBreak += dt) >= BREATHER_EVERY) breather = { t: 0 };
+    } else if ((sinceBreak += dt) >= BREATHER_EVERY) { breather = { t: 0 }; emit('breatherStart'); }
     const wdt = dt * pace;
 
     phase += wdt * speed / START_SPEED;
@@ -146,10 +164,14 @@ export function createGame(canvas, { canStart = () => true } = {}) {
     speed = difficultyAt(elapsed).speed;
     scroll += speed * wdt;
 
+    const hadGhost = ghostT > 0;
     ghostT = Math.max(0, ghostT - dt); graceT = Math.max(0, graceT - dt);
+    if (hadGhost && ghostT === 0) emit('ghostEnd');
+    const level = difficultyAt(elapsed).level;
+    if (level > lastLevel) { lastLevel = level; emit('level', { level }); }
     player.x += (LANES[player.lane] - player.x) * Math.min(1, dt * LANE_SLIDE);
     player.duckT = Math.max(0, player.duckT - dt);
-    if (jumpHeld() && player.z === 0 && player.vz === 0) player.vz = JUMP_V;
+    if (jumpHeld() && player.z === 0 && player.vz === 0) { player.vz = JUMP_V; emit('jump'); }
     if (player.z > 0 || player.vz > 0) {
       player.vz -= GRAVITY * dt;
       if (duckHeld()) player.vz -= 1800 * dt;
@@ -170,16 +192,20 @@ export function createGame(canvas, { canStart = () => true } = {}) {
     pickups = pickups.filter(p => {
       if (!near(p)) return true;
       if (p.type === 'shield') shield = true; else ghostT = GHOST_SECONDS;
+      emit('pickup', { type: p.type, x: LANES[p.lane], y: p.y });
       return false;                                              // collected
     });
 
     const duck = ducking();
+    if (duck && !wasDuck) emit('duck');
+    wasDuck = duck;
     for (const o of obstacles) {
       if (!near(o)) continue;
       const hit = o.kind === 'pillar' ? true : o.kind === 'block' ? player.z < BLOCK_CLEAR : !duck;
       if (!hit || ghostT > 0 || graceT > 0) continue;
       if (shield) {                                              // the shield takes the hit and the obstacle is smashed
         shield = false; graceT = SHIELD_GRACE; shieldBreakT = t; o.smashed = true;
+        emit('shieldBreak', { x: LANES[o.lane], y: o.y });
         continue;
       }
       die();
@@ -199,5 +225,5 @@ export function createGame(canvas, { canStart = () => true } = {}) {
     };
   }
 
-  return { update, getView, start, jump, move, setLane, duckFor, setDuckHeld, setJumpHeld, setPlank, isPlaying };
+  return { on, update, getView, start, jump, move, setLane, duckFor, setDuckHeld, setJumpHeld, setPlank, isPlaying };
 }

@@ -43,6 +43,16 @@ The game is drawn in real 3D with three.js, from a chase camera behind the dino.
 
 The world has colour themes (Neon Night, Sunset Drive, Sunny Day, Desert Dusk, Arctic, Candy Land, Matrix). The game always starts on Auto. Click the button in the top-left or press T to cycle (a theme you pick lasts until you reload). The last stop in the cycle is **Auto**, which changes the world as you play: a new theme every 20 seconds of a run, cross-fading over 2.5 seconds, in the order above and then around again (`AUTO` in `themes.js`). To make your own theme, add an entry to `js/render/themes.js`.
 
+### Roadside scenery
+
+Each theme has its own scenery along both sides of the road, scrolling past with it: neon towers, sunset palms and mountains, trees and hills, cacti and mesas, snowy pines and ice crystals, lollipops and gumdrops, columns of falling code. When the theme changes, the new props start arriving from the horizon while the old ones drive past, so the world changes along the road. Props are in `js/render/scenery.js` (add or change builders and the per-theme `SETS` there).
+
+## Sound and hit feedback
+
+Sound is synthesized in the browser (`js/audio.js`, no audio files): effects for lane changes, jumps, ducks, pickups, a shield breaking, the breather, level-ups and dying, plus a music loop that gets faster and busier as the level rises, slows down during the breather, and changes key with each theme. Press M (or click the button under the theme button) to cycle sound + music, sound effects only, silent. Browsers only allow sound after a key press or click, so it starts with your first Space.
+
+Hits have feedback too: the camera shakes and the screen flashes on death or a shield break, particles burst when you pick something up, a shield pops or you die, and the dino is knocked over when it dies. These are driven by game events (`game.on('die', ...)` in `js/main.js`).
+
 ## Obstacles
 
 | Obstacle | What to do |
@@ -81,6 +91,7 @@ The run gets harder as it goes: over 150 seconds the road speeds up from 300 to 
 | Keyboard only | Esc |
 | Show/hide camera preview | V |
 | Change colour theme (three.js look) | T, or the button top-left |
+| Cycle sound + music / effects only / silent | M, or the button top-left |
 | Show/hide the camera sliders | H |
 | Show live jump/duck/hand numbers on the preview | D |
 
@@ -89,7 +100,8 @@ Touch: swipe up = jump, down = duck, left/right = lane, tap = jump.
 ## Layout
 
 - `js/game.js` game logic (no drawing); `getView()` hands renderers a snapshot of the frame
-- `js/render/three.js` the 3D scene (dino, obstacles, powerups, road, camera); `js/render/themes.js` colour themes (pure data: sky, road, dino, obstacles, lighting); `js/render/hud.js` score, powerup chips and title text, drawn on the 2D canvas over the 3D one
+- `js/audio.js` synthesized sound effects and music; `js/render/scenery.js` roadside props per theme
+- `js/render/three.js` the 3D scene (dino, obstacles, powerups, road, camera, particles, shake and flash); `js/render/themes.js` colour themes (pure data: sky, road, dino, obstacles, lighting); `js/render/hud.js` score, powerup chips and title text, drawn on the 2D canvas over the 3D one
 - `js/input/keyboard.js` keyboard + touch
 - `js/input/pose.js` webcam + MediaPipe
 - `js/input/gestures.js` landmarks to lane / jump / duck, calibration (thresholds in `CONFIG`)

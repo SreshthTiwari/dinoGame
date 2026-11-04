@@ -1,4 +1,5 @@
-import { createGame } from './game.js';
+import { createGame, PY } from './game.js';
+import { createAudio } from './audio.js';
 import { attachKeyboard } from './input/keyboard.js';
 import { createPose } from './input/pose.js';
 import { CONFIG, extractFeatures, createSmoother, createCalibrator, createController } from './input/gestures.js';
@@ -25,13 +26,16 @@ let debug = false, wasPlaying = false, lastDetect = 0;
 const game = createGame(canvas, { canStart });
 game.setPlank(plankMode);
 const camPanel = createCameraPanel();
+const audio = createAudio();
+// browsers only allow sound after a click or key press
+for (const type of ['keydown', 'pointerdown']) addEventListener(type, () => audio.unlock(), { once: true });
 
 // Renderer: three.js (real 3D). The 2D canvas on top of it draws the HUD and takes touch input.
 const stage = document.getElementById('stage');
 let renderer;
 try {
   renderer = createThree(canvas, stage);
-  renderer.onThemeChange = () => showTheme();
+  renderer.onThemeChange = () => { showTheme(); audio.setTheme(renderer.current.id); };
 } catch (err) {                                      // no WebGL: keep the game running (blank scene) and say why
   console.error(err);
   const ctx2d = canvas.getContext('2d');
@@ -59,6 +63,44 @@ function cycleTheme() {
 }
 themeBtn.addEventListener('click', () => { cycleTheme(); themeBtn.blur(); });
 showTheme();
+
+// Sound button (also the M key): sound + music -> sound effects only -> silent
+const audioBtn = document.getElementById('audioBtn');
+const SOUND_LABELS = { on: 'Sound + music', sfx: 'Sound effects only', off: 'Silent' };
+function showSound() { audioBtn.textContent = `${SOUND_LABELS[audio.mode]}  (M)`; }
+function cycleSound() { audio.unlock(); audio.cycleMode(); showSound(); }
+audioBtn.addEventListener('click', () => { cycleSound(); audioBtn.blur(); });
+showSound();
+
+// Game events -> sound and hit effects
+const fx = renderer.fx;
+const ride = (...a) => fx?.burst(...a);
+game.on('start', () => { audio.play('start'); audio.setLevel(1); audio.setTempoScale(1); audio.setPlaying(true); });
+game.on('laneChange', d => { audio.play('laneChange', d); ride(d.x, PY, 2, '#cfc8ff', { n: 7, speed: 70, up: 50, life: 0.35 }); });
+game.on('jump', () => { audio.play('jump'); ride(game.getView().player.x, PY, 2, '#cfc8ff', { n: 8, speed: 80, up: 60, life: 0.4 }); });
+game.on('duck', () => audio.play('duck'));
+game.on('pickup', d => {
+  const color = d.type === 'ghost' ? '#c9b6ff' : '#4de8ff';
+  audio.play('pickup', d);
+  ride(d.x, PY, 40, color, { n: 38, speed: 150, up: 150, life: 0.8 });
+  fx?.flash(color, 0.16, 0.3);
+});
+game.on('shieldBreak', d => {
+  audio.play('shieldBreak');
+  ride(d.x, d.y, 30, '#4de8ff', { n: 44, speed: 230, up: 170, life: 0.8 });
+  ride(d.x, d.y, 30, '#ffffff', { n: 16, speed: 160, up: 120, life: 0.5 });
+  fx?.flash('#4de8ff', 0.35, 0.35); fx?.shake(7, 0.3);
+});
+game.on('ghostEnd', () => audio.play('ghostEnd'));
+game.on('breatherStart', () => { audio.play('breatherStart'); audio.setTempoScale(0.6); });
+game.on('breatherEnd', () => { audio.play('breatherEnd'); audio.setTempoScale(1); });
+game.on('level', d => { audio.play('level'); audio.setLevel(d.level); });
+game.on('die', d => {
+  audio.play('die'); audio.setPlaying(false);
+  ride(d.x, PY, 30, '#ff5d8f', { n: 60, speed: 300, up: 230, life: 0.95 });
+  ride(d.x, PY, 30, '#ffffff', { n: 24, speed: 220, up: 180, life: 0.6 });
+  fx?.flash('#ff3355', 0.5, 0.5); fx?.shake(16, 0.55);
+});
 attachKeyboard(canvas, game);
 
 // The first start request kicks off camera setup; the game only starts once calibration is done.
@@ -130,6 +172,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyV') ui.toggleMini();
   if (e.code === 'KeyH') camPanel.toggle();
   if (e.code === 'KeyT') cycleTheme();
+  if (e.code === 'KeyM') cycleSound();
   if (e.code === 'KeyD') debug = !debug;
 });
 

@@ -1,5 +1,9 @@
 export const LANES = [120, 240, 360];
 export const PY = 590;               // where the dino sits along the road (world y)
+// Obstacles and pickups are created this far up the road, out in the haze, and drive toward the dino.
+// The 3D renderer fogs out everything at this distance, so they fade into view instead of popping in.
+export const SPAWN_AHEAD = 1300;
+export const SPAWN_Y = PY - SPAWN_AHEAD;
 const GRAVITY = 1800, JUMP_V = 640;
 const BLOCK_CLEAR = 40;              // must be at least this high to hop a block (the crystals are ~32 tall, x0.8 jump scale)
 const LANE_SLIDE = 30;               // how fast the dino slides into a new lane (higher = snappier)
@@ -68,7 +72,7 @@ export function createGame(canvas, { canStart = () => true } = {}) {
 
   function reset() {
     player = newPlayer(); obstacles = []; pickups = [];
-    score = 0; speed = START_SPEED; elapsed = 0; spawnIn = 1.5; state = 'play';
+    score = 0; speed = START_SPEED; elapsed = 0; spawnIn = 0.3; state = 'play';       // (the first row still has the whole road to cross)
     shield = false; ghostT = 0; graceT = 0; pickupIn = PICKUP_FIRST; sinceBreak = 0; breather = null;
   }
   function start() { if (state !== 'play' && canStart()) reset(); }
@@ -101,7 +105,7 @@ export function createGame(canvas, { canStart = () => true } = {}) {
     const mix = plank ? MIX.plank : MIX.standing;
     for (const l of rowLanes) {
       const kind = pickWeighted(mix);
-      obstacles.push({ lane: l, y: -60, kind, style: choose(STYLES[kind]) });
+      obstacles.push({ lane: l, y: SPAWN_Y, kind, style: choose(STYLES[kind]) });
     }
     spawnIn = dif.gap + Math.random() * dif.extra;
 
@@ -109,7 +113,7 @@ export function createGame(canvas, { canStart = () => true } = {}) {
     if (pickupIn <= 0) {
       let type = choose(POWERUPS);
       if (type === 'shield' && shield) type = 'ghost';             // no point offering a second shield
-      pickups.push({ lane: lanes[rowLanes.length], y: -60 - 0.5 * spawnIn * dif.speed, type });
+      pickups.push({ lane: lanes[rowLanes.length], y: SPAWN_Y - 0.5 * spawnIn * dif.speed, type });
       pickupIn = lerp(PICKUP_EVERY[0], PICKUP_EVERY[1], Math.random());
     }
   }

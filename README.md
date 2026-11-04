@@ -51,7 +51,7 @@ The world has colour themes (Neon Night, Sunset Drive, Sunny Day, Desert Dusk, A
 | Gate, laser (overhead) | duck (squat / pushup) |
 | Pillar (tall) | change lane: nothing else gets you past it |
 
-Rows block one or two lanes, so there is always a free lane. The mix is set by `MIX` at the top of `js/game.js` (plank mode has more gates).
+Obstacles are created far up the road (`SPAWN_AHEAD` in `game.js`), out in the haze, and fade into view as they come toward you; the haze is tuned by `FOG_START` in `three.js`. Rows block one or two lanes, so there is always a free lane. The mix is set by `MIX` at the top of `js/game.js` (plank mode has more gates).
 
 ## Powerups
 

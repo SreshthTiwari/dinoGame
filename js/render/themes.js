@@ -3,6 +3,7 @@
 //   sky      gradient from `top` (screen top) down to `horizon` (where the road meets the sky), with an
 //            optional `mid` band between them. Stars and a sun are optional.
 //   fog      far things fade into this colour, so it should be (close to) the sky's `horizon` colour.
+//            (How far away the haze is comes from where obstacles are created: see FOG_START in three.js.)
 //   ground / grid / road / dash / edge   the floor grid, the road, its lane dashes and its glowing edges.
 //   dino     body, dark (legs and tail) and plates (back spikes).
 //   spike / post / bar / barGlow   the spikes you jump, and the gate you duck under (posts + bar).
@@ -11,7 +12,7 @@ export const THEMES = {
   neon: {
     label: 'Neon Night',
     sky: { top: '#0e0b1f', horizon: '#2d1a6b', stars: 60 },
-    fog: '#2d1a6b', fogNear: 700, fogFar: 2300,
+    fog: '#2d1a6b',
     ground: '#0e0b1f', grid: 'rgba(122,92,255,0.45)', road: '#1b1040', dash: '#3a2a7a', edge: '#5ef2c8',
     dino: { body: '#5ef2c8', dark: '#2bb894', plates: '#ff5d8f' },
     spike: '#ff5d8f', post: '#7a5cff', bar: '#ffd35e', barGlow: '#6b4a00',
@@ -20,7 +21,7 @@ export const THEMES = {
   sunset: {
     label: 'Sunset Drive',
     sky: { top: '#1b0a45', mid: '#b02a7a', horizon: '#ff8a5b', sun: { color: '#ffe29a', glow: '#ff5e7e' } },
-    fog: '#ff8a5b', fogNear: 800, fogFar: 2500,
+    fog: '#ff8a5b',
     ground: '#1d0838', grid: 'rgba(255,79,216,0.55)', road: '#2c1050', dash: '#ff9d4f', edge: '#ff4fd8',
     dino: { body: '#7dffe0', dark: '#2fc9a8', plates: '#ff3d81' },
     spike: '#ff2e63', post: '#8a5cff', bar: '#ffe066', barGlow: '#7a5a00',
@@ -29,7 +30,7 @@ export const THEMES = {
   day: {
     label: 'Sunny Day',
     sky: { top: '#2f8fe8', horizon: '#cfeeff' },
-    fog: '#cfeeff', fogNear: 900, fogFar: 2800,
+    fog: '#cfeeff',
     ground: '#4da64d', grid: 'rgba(255,255,255,0.22)', road: '#4a4f5a', dash: '#f4f4f4', edge: '#ffffff',
     dino: { body: '#ff9f43', dark: '#e1761f', plates: '#e84118' },
     spike: '#e74c3c', post: '#2c3e50', bar: '#f9ca24', barGlow: '#5a4500',
@@ -38,7 +39,7 @@ export const THEMES = {
   desert: {
     label: 'Desert Dusk',
     sky: { top: '#5b3a7a', mid: '#e0836a', horizon: '#f7d49a', sun: { color: '#fff3c4', glow: '#ffb15e' } },
-    fog: '#f7d49a', fogNear: 800, fogFar: 2600,
+    fog: '#f7d49a',
     ground: '#d9a566', grid: 'rgba(150,95,45,0.45)', road: '#7a4f33', dash: '#f0d9a8', edge: '#ff9f43',
     dino: { body: '#3fb8a5', dark: '#1f8a78', plates: '#ffd166' },
     spike: '#b5412d', post: '#5d3a2a', bar: '#ffcc66', barGlow: '#6b4a00',
@@ -47,7 +48,7 @@ export const THEMES = {
   arctic: {
     label: 'Arctic',
     sky: { top: '#0b1d3a', mid: '#3d78b5', horizon: '#bfe4ff', stars: 40 },
-    fog: '#bfe4ff', fogNear: 800, fogFar: 2500,
+    fog: '#bfe4ff',
     ground: '#eaf6ff', grid: 'rgba(120,180,225,0.55)', road: '#5d88b0', dash: '#ffffff', edge: '#38e1ff',
     dino: { body: '#ff8fab', dark: '#d9607f', plates: '#ffd166' },
     spike: '#7fe3ff', post: '#264653', bar: '#ffd166', barGlow: '#5a4500',
@@ -56,7 +57,7 @@ export const THEMES = {
   candy: {
     label: 'Candy Land',
     sky: { top: '#9b59f0', mid: '#ff8ed4', horizon: '#ffe3f1' },
-    fog: '#ffe3f1', fogNear: 800, fogFar: 2500,
+    fog: '#ffe3f1',
     ground: '#ffd0ea', grid: 'rgba(255,120,190,0.5)', road: '#6c5ce7', dash: '#ffffff', edge: '#ff6b9d',
     dino: { body: '#55efc4', dark: '#1fbf93', plates: '#ff6b9d' },
     spike: '#fd79a8', post: '#0984e3', bar: '#fdcb6e', barGlow: '#6b4a00',
@@ -65,7 +66,7 @@ export const THEMES = {
   matrix: {
     label: 'Matrix',
     sky: { top: '#000000', horizon: '#04170b', stars: 90 },
-    fog: '#04170b', fogNear: 600, fogFar: 2000,
+    fog: '#04170b',
     ground: '#000000', grid: 'rgba(0,255,102,0.5)', road: '#02100a', dash: '#00b84d', edge: '#00ff66',
     dino: { body: '#00ff88', dark: '#009955', plates: '#b6ff00' },
     spike: '#ff2a2a', post: '#00aa44', bar: '#ccff00', barGlow: '#445500',
@@ -109,7 +110,7 @@ export function blendTheme(a, b, k) {
       stars: Math.round(n(a.sky.stars || 0, b.sky.stars || 0)),
       sun: s1 ? { color: c(s1.color, s2.color), glow: c(s1.glow, s2.glow), alpha: n(sa ? 1 : 0, sb ? 1 : 0) } : null,
     },
-    fog: c(a.fog, b.fog), fogNear: n(a.fogNear, b.fogNear), fogFar: n(a.fogFar, b.fogFar),
+    fog: c(a.fog, b.fog),
     ground: c(a.ground, b.ground), grid: c(a.grid, b.grid), road: c(a.road, b.road), dash: c(a.dash, b.dash), edge: c(a.edge, b.edge),
     dino: { body: c(a.dino.body, b.dino.body), dark: c(a.dino.dark, b.dino.dark), plates: c(a.dino.plates, b.dino.plates) },
     spike: c(a.spike, b.spike), post: c(a.post, b.post), bar: c(a.bar, b.bar), barGlow: c(a.barGlow, b.barGlow),

@@ -5,7 +5,7 @@
 // maps to scene (x - 240, up, y - PY): the dino sits at the origin facing -z, away from the
 // camera, and obstacles come toward +z.
 import * as THREE from '../../vendor/three/three.module.js';
-import { LANES, PY } from '../game.js';
+import { LANES, PY, SPAWN_AHEAD } from '../game.js';
 import { THEMES, THEME_ORDER, DEFAULT_THEME, AUTO, blendTheme, mixColor } from './themes.js';
 
 export const THREE_DEFAULTS = { height: 260, distance: 480, lookAhead: 400, fov: 60, follow: 0.6 };
@@ -23,6 +23,7 @@ const CX = LANES[1];                 // x of the middle lane
 const ROAD_W = LANES[2] - LANES[0] + 120, FAR = 3000, NEAR = 400;
 const JUMP_VIS = 0.8;                // scene units of height per unit of game jump height
 const DINO_SCALE = 1.4;
+const FOG_START = 0.6;               // haze starts this fraction of the way to the spawn point (lower = obstacles fade in over a longer stretch)
 // ducking dips the head and neck forward and down (the body stays put). Standing, the head is
 // above a gate's bar; ducked, it is below it.
 const DUCK_ANGLE = -1.2;             // radians the neck pitches forward-down at full duck
@@ -93,7 +94,7 @@ export function createThree(canvas2d, stage) {
   const sky = canvasTexture(256, 384, () => {}, 1, 1, renderer);       // painted by applyTheme(); same 2:3 shape as the screen
   sky.wrapS = sky.wrapT = THREE.ClampToEdgeWrapping;
   scene.background = sky;
-  scene.fog = new THREE.Fog(0x000000, 700, 2300);
+  scene.fog = new THREE.Fog(0x000000, 1000, 1700);
 
   const ambient = new THREE.AmbientLight(0xffffff, 0.9);
   scene.add(ambient);
@@ -278,7 +279,7 @@ export function createThree(canvas2d, stage) {
     repaint(sky, (g, w, h) => paintSky(g, w, h, t));
     repaint(groundTex, paintGround(t));
     repaint(roadTex, paintRoad(t));
-    scene.fog.color.set(t.fog); scene.fog.near = t.fogNear; scene.fog.far = t.fogFar;
+    scene.fog.color.set(t.fog);
     edge.color.set(t.edge);
     bodyMat.color.set(t.dino.body); darkMat.color.set(t.dino.dark); pinkMat.color.set(t.dino.plates);
     crystalMat.color.set(t.spike); crystalMat.emissive.set(t.spike).multiplyScalar(0.7);
@@ -329,6 +330,12 @@ export function createThree(canvas2d, stage) {
       if (id !== targetId) goTo(id, AUTO.fade);
     }
     stepFade(dt);
+
+    // The haze is fully opaque at the spot obstacles are created, wherever the camera is, and starts
+    // thinning in FOG_START of the way there, so they fade in out of it as they come up the road
+    // instead of popping into view, and are clear for the last stretch.
+    const spawnDist = Math.hypot(cam.height, cam.distance + SPAWN_AHEAD);
+    scene.fog.far = spawnDist * 0.97; scene.fog.near = scene.fog.far * FOG_START;
 
     groundTex.offset.y = v.scroll / GRID;
     roadTex.offset.y = v.scroll / DASH;

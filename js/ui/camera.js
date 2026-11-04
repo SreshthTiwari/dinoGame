@@ -6,7 +6,7 @@ export function createCameraPanel() {
   document.body.append(panel);
 
   function setRenderer(r) {
-    const key = `blip-cam-${r.name}`;
+    const key = `blip-cam-${r.name}-2`;                 // '-2': the old saved values were dropped when the defaults changed
     try {
       Object.assign(r.cam, JSON.parse(localStorage.getItem(key) || '{}'));
     } catch {}

@@ -39,9 +39,9 @@ Plank mode has no jumping, so its crystals and rocks have to be dodged by lane, 
 
 ## Looks
 
-The game is drawn in real 3D with three.js, from a chase camera behind the dino. The sliders in the bottom-left move the camera (height, distance, how far ahead it looks, field of view, how much it follows your lane); they are saved, and H hides them.
+The game is drawn in real 3D with three.js, from a chase camera behind the dino. The sliders in the bottom-left move the camera (height, distance, how far ahead it looks, field of view, how much it follows your lane); your changes are remembered, the Reset button goes back to the defaults (height 160, distance 330, look ahead 460, FOV 58, follow 1; `THREE_DEFAULTS` in `three.js`), and H hides them.
 
-The world has colour themes (Neon Night, Sunset Drive, Sunny Day, Desert Dusk, Arctic, Candy Land, Matrix). Click the button in the top-left or press T to cycle; the choice is remembered. The last stop in the cycle is **Auto**, which changes the world as you play: a new theme every 20 seconds of a run, cross-fading over 2.5 seconds, in the order above and then around again (`AUTO` in `themes.js`). To make your own theme, add an entry to `js/render/themes.js`.
+The world has colour themes (Neon Night, Sunset Drive, Sunny Day, Desert Dusk, Arctic, Candy Land, Matrix). The game always starts on Auto. Click the button in the top-left or press T to cycle (a theme you pick lasts until you reload). The last stop in the cycle is **Auto**, which changes the world as you play: a new theme every 20 seconds of a run, cross-fading over 2.5 seconds, in the order above and then around again (`AUTO` in `themes.js`). To make your own theme, add an entry to `js/render/themes.js`.
 
 ## Obstacles
 

@@ -8,7 +8,7 @@ import * as THREE from '../../vendor/three/three.module.js';
 import { LANES, PY, SPAWN_AHEAD } from '../game.js';
 import { THEMES, THEME_ORDER, DEFAULT_THEME, AUTO, blendTheme, mixColor } from './themes.js';
 
-export const THREE_DEFAULTS = { height: 260, distance: 480, lookAhead: 400, fov: 60, follow: 0.6 };
+export const THREE_DEFAULTS = { height: 160, distance: 330, lookAhead: 460, fov: 58, follow: 1 };
 // height / distance = where the camera sits above / behind the dino, lookAhead = how far down the
 // road it aims, fov = lens, follow = how much the camera drifts sideways with the dino
 const SLIDERS = [
@@ -296,9 +296,8 @@ export function createThree(canvas2d, stage) {
     else { fade = null; applyTheme(THEMES[id]); }
     onThemeChange?.();
   }
-  function setTheme(id) {                            // a theme id, or 'auto'
-    choice = id === AUTO.id || THEMES[id] ? id : DEFAULT_THEME;
-    try { localStorage.setItem('blip-theme', choice); } catch {}
+  function setTheme(id) {                            // a theme id, or 'auto'. Not remembered: every load starts on auto
+    choice = id === AUTO.id || THEMES[id] ? id : AUTO.id;
     if (choice !== AUTO.id) goTo(choice, 0.6);
     else onThemeChange?.();                          // auto picks its theme on the next frame, from the run time
   }
@@ -309,12 +308,8 @@ export function createThree(canvas2d, stage) {
     applyTheme(fade.k >= 1 ? fade.to : blendTheme(fade.from, fade.to, e));
     if (fade.k >= 1) fade = null;
   }
-  {
-    let saved = null;
-    try { saved = localStorage.getItem('blip-theme'); } catch {}
-    choice = saved === AUTO.id || THEMES[saved] ? saved : DEFAULT_THEME;
-    goTo(choice === AUTO.id ? DEFAULT_THEME : choice, 0);
-  }
+  choice = AUTO.id;                                  // always start on auto (it begins with the default theme)
+  goTo(DEFAULT_THEME, 0);
 
   const meshes = new Map();                          // game obstacle -> its mesh
   const pickupMeshes = new Map();                    // game pickup -> its mesh

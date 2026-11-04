@@ -6,6 +6,7 @@
 // camera, and obstacles come toward +z.
 import * as THREE from '../../vendor/three/three.module.js';
 import { LANES, PY } from '../game.js';
+import { THEMES, THEME_ORDER, DEFAULT_THEME, AUTO, blendTheme } from './themes.js';
 
 export const THREE_DEFAULTS = { height: 260, distance: 480, lookAhead: 400, fov: 60, follow: 0.6 };
 // height / distance = where the camera sits above / behind the dino, lookAhead = how far down the
@@ -27,7 +28,6 @@ const DINO_SCALE = 1.4;
 const DUCK_ANGLE = -1.2;             // radians the neck pitches forward-down at full duck
 const DUCK_CROUCH = 3;               // how far the whole body sinks (model units)
 const DUCK_SPEED = 18;               // how fast the duck eases in and out (per second)
-const HORIZON = 0x2d1a6b;
 
 // a small canvas drawn once, used as a repeating texture
 function canvasTexture(w, h, paint, repeatX, repeatY, renderer) {
@@ -39,6 +39,42 @@ function canvasTexture(w, h, paint, repeatX, repeatY, renderer) {
   tex.repeat.set(repeatX, repeatY);
   tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   return tex;
+}
+
+// redraw a canvas texture in place (used when the theme changes)
+function repaint(tex, paint) {
+  const c = tex.image;
+  paint(c.getContext('2d'), c.width, c.height);
+  tex.needsUpdate = true;
+}
+
+// sky: a vertical gradient, plus optional stars and a setting sun. It is a screen-space background,
+// so the sun sits at a fixed height on screen, about where the horizon is with the default camera.
+function paintSky(g, w, h, t) {
+  const { top, mid, horizon, stars, sun } = t.sky;
+  const gr = g.createLinearGradient(0, 0, 0, h);
+  gr.addColorStop(0, top);
+  if (mid) gr.addColorStop(0.24, mid);
+  gr.addColorStop(0.42, horizon); gr.addColorStop(1, horizon);
+  g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  if (stars) {
+    let seed = 7;                                    // fixed seed: the same stars every time
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < stars; i++) {
+      g.fillStyle = `rgba(255,255,255,${0.25 + rnd() * 0.5})`;
+      const r = 0.5 + rnd() * 1.2;
+      g.fillRect(rnd() * w, rnd() * h * 0.34, r, r);
+    }
+  }
+  if (sun) {
+    const x = w / 2, y = h * 0.38, r = w * 0.15;
+    const glow = g.createRadialGradient(x, y, r * 0.6, x, y, r * 3);
+    glow.addColorStop(0, sun.glow + 'cc'); glow.addColorStop(1, sun.glow + '00');
+    g.globalAlpha = sun.alpha ?? 1;                  // fades in / out while one theme blends into another
+    g.fillStyle = glow; g.fillRect(0, 0, w, h);
+    g.fillStyle = sun.color; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    g.globalAlpha = 1;
+  }
 }
 
 export function createThree(canvas2d, stage) {
@@ -54,16 +90,13 @@ export function createThree(canvas2d, stage) {
   renderer.setSize(W, H, false);
 
   const scene = new THREE.Scene();
-  const sky = canvasTexture(2, 256, (g, w, h) => {
-    const gr = g.createLinearGradient(0, 0, 0, h);
-    gr.addColorStop(0, '#0e0b1f'); gr.addColorStop(0.5, '#2d1a6b'); gr.addColorStop(1, '#2d1a6b');
-    g.fillStyle = gr; g.fillRect(0, 0, w, h);
-  }, 1, 1, renderer);
+  const sky = canvasTexture(256, 384, () => {}, 1, 1, renderer);       // painted by applyTheme(); same 2:3 shape as the screen
   sky.wrapS = sky.wrapT = THREE.ClampToEdgeWrapping;
   scene.background = sky;
-  scene.fog = new THREE.Fog(HORIZON, 700, 2300);
+  scene.fog = new THREE.Fog(0x000000, 700, 2300);
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+  const ambient = new THREE.AmbientLight(0xffffff, 0.9);
+  scene.add(ambient);
   const sun = new THREE.DirectionalLight(0xffffff, 1.1);
   sun.position.set(150, 400, 250);
   scene.add(sun);
@@ -80,19 +113,21 @@ export function createThree(canvas2d, stage) {
     return m;
   };
   const LEN = FAR + NEAR, GRID = 120, DASH = 60;
-  const groundTex = canvasTexture(128, 128, (g, w, h) => {
-    g.fillStyle = '#0e0b1f'; g.fillRect(0, 0, w, h);
-    g.strokeStyle = 'rgba(122,92,255,0.45)'; g.lineWidth = 3; g.strokeRect(0, 0, w, h);
-  }, 4000 / GRID, LEN / GRID, renderer);
-  flat(4000, LEN, groundTex, -0.5);
-  const roadTex = canvasTexture(ROAD_W, DASH, (g, w, h) => {
-    g.fillStyle = '#1b1040'; g.fillRect(0, 0, w, h);
-    g.fillStyle = '#3a2a7a';
+  const paintGround = t => (g, w, h) => {
+    g.fillStyle = t.ground; g.fillRect(0, 0, w, h);
+    g.strokeStyle = t.grid; g.lineWidth = 3; g.strokeRect(0, 0, w, h);
+  };
+  const paintRoad = t => (g, w, h) => {
+    g.fillStyle = t.road; g.fillRect(0, 0, w, h);
+    g.fillStyle = t.dash;
     for (const lx of [(LANES[0] + LANES[1]) / 2, (LANES[1] + LANES[2]) / 2])    // dashes between the lanes
       g.fillRect(w / 2 + lx - CX - 2, 0, 4, h / 2);
-  }, 1, LEN / DASH, renderer);
+  };
+  const groundTex = canvasTexture(128, 128, () => {}, 4000 / GRID, LEN / GRID, renderer);
+  flat(4000, LEN, groundTex, -0.5);
+  const roadTex = canvasTexture(ROAD_W, DASH, () => {}, 1, LEN / DASH, renderer);
   flat(ROAD_W, LEN, roadTex, 0);
-  const edge = new THREE.MeshBasicMaterial({ color: 0x5ef2c8 });
+  const edge = new THREE.MeshBasicMaterial();
   for (const sx of [-1, 1]) {
     const e = new THREE.Mesh(new THREE.BoxGeometry(5, 3, LEN), edge);
     e.position.set(sx * ROAD_W / 2, 1.5, (NEAR - FAR) / 2);
@@ -101,7 +136,7 @@ export function createThree(canvas2d, stage) {
 
   // ---- the dino: built from simple shapes, facing -z so the camera sees its back ----
   const mat = c => new THREE.MeshLambertMaterial({ color: c });
-  const bodyMat = mat(0x5ef2c8), darkMat = mat(0x2bb894), pinkMat = mat(0xff5d8f);
+  const bodyMat = mat(0xffffff), darkMat = mat(0xffffff), pinkMat = mat(0xffffff);   // coloured by the theme
   const dino = new THREE.Group();
   const model = new THREE.Group();               // the dino as a unit (sinks a little when ducking)
   dino.add(model);
@@ -140,10 +175,10 @@ export function createThree(canvas2d, stage) {
   scene.add(shadow);
 
   // ---- obstacles ----
-  const spikeGeo = new THREE.ConeGeometry(12, 22, 4), spikeMat = mat(0xff5d8f);
-  const postGeo = new THREE.BoxGeometry(8, 58, 8), postMat = mat(0x7a5cff);
+  const spikeGeo = new THREE.ConeGeometry(12, 22, 4), spikeMat = mat(0xffffff);
+  const postGeo = new THREE.BoxGeometry(8, 58, 8), postMat = mat(0xffffff);
   const barGeo = new THREE.BoxGeometry(96, 12, 10);
-  const barMat = new THREE.MeshLambertMaterial({ color: 0xffd35e, emissive: 0x6b4a00 });
+  const barMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
   function makeBlock() {
     const g = new THREE.Group();
     for (const sx of [-1, 0, 1]) {
@@ -158,11 +193,64 @@ export function createThree(canvas2d, stage) {
     add(g, barGeo, barMat, 0, 52, 0);                // bar bottom at 46: the dino has to duck under it
     return g;
   }
+  // ---- themes ----
+  // `choice` is what the player picked: a theme id, or 'auto' (a new theme every AUTO.seconds of a run).
+  // `now` is the theme that is on screen right now (part-way between two while a fade runs) and
+  // `targetId` the theme it is heading for.
+  let choice = DEFAULT_THEME, targetId = DEFAULT_THEME, now = THEMES[DEFAULT_THEME], fade = null;
+  let onThemeChange = null;
+
+  function applyTheme(t) {                           // paint a (possibly blended) theme onto everything
+    now = t;
+    repaint(sky, (g, w, h) => paintSky(g, w, h, t));
+    repaint(groundTex, paintGround(t));
+    repaint(roadTex, paintRoad(t));
+    scene.fog.color.set(t.fog); scene.fog.near = t.fogNear; scene.fog.far = t.fogFar;
+    edge.color.set(t.edge);
+    bodyMat.color.set(t.dino.body); darkMat.color.set(t.dino.dark); pinkMat.color.set(t.dino.plates);
+    spikeMat.color.set(t.spike); postMat.color.set(t.post);
+    barMat.color.set(t.bar); barMat.emissive.set(t.barGlow);
+    ambient.color.set(t.light.ambient[0]); ambient.intensity = t.light.ambient[1];
+    sun.color.set(t.light.sun[0]); sun.intensity = t.light.sun[1];
+  }
+  function goTo(id, seconds) {                       // head for theme `id`, fading over `seconds` (0 = at once)
+    targetId = id;
+    if (seconds > 0) fade = { from: now, to: THEMES[id], k: 0, secs: seconds };
+    else { fade = null; applyTheme(THEMES[id]); }
+    onThemeChange?.();
+  }
+  function setTheme(id) {                            // a theme id, or 'auto'
+    choice = id === AUTO.id || THEMES[id] ? id : DEFAULT_THEME;
+    try { localStorage.setItem('blip-theme', choice); } catch {}
+    if (choice !== AUTO.id) goTo(choice, 0.6);
+    else onThemeChange?.();                          // auto picks its theme on the next frame, from the run time
+  }
+  function stepFade(dt) {
+    if (!fade) return;
+    fade.k = Math.min(1, fade.k + dt / fade.secs);
+    const e = fade.k * fade.k * (3 - 2 * fade.k);    // smoothstep: eases in and out
+    applyTheme(fade.k >= 1 ? fade.to : blendTheme(fade.from, fade.to, e));
+    if (fade.k >= 1) fade = null;
+  }
+  {
+    let saved = null;
+    try { saved = localStorage.getItem('blip-theme'); } catch {}
+    choice = saved === AUTO.id || THEMES[saved] ? saved : DEFAULT_THEME;
+    goTo(choice === AUTO.id ? DEFAULT_THEME : choice, 0);
+  }
+
   const meshes = new Map();                          // game obstacle -> its mesh
   let duck = 0, lastT = 0;                           // eased duck amount; game time of the previous frame
 
   function draw(v) {
     ctx2d.clearRect(0, 0, W, H);                     // the 2D canvas is transparent here: HUD only
+
+    const dt = Math.min(0.1, Math.max(0, v.t - lastT)); lastT = v.t;
+    if (choice === AUTO.id && v.state === 'play') {  // auto: the run time decides the world
+      const id = THEME_ORDER[Math.floor(v.elapsed / AUTO.seconds) % THEME_ORDER.length];
+      if (id !== targetId) goTo(id, AUTO.fade);
+    }
+    stepFade(dt);
 
     groundTex.offset.y = v.scroll / GRID;
     roadTex.offset.y = v.scroll / DASH;
@@ -172,7 +260,6 @@ export function createThree(canvas2d, stage) {
     const running = p.z === 0 && v.state === 'play';
     const run = running ? Math.sin(v.phase * 22) : 0;
     dino.position.set(px, lift, 0);
-    const dt = Math.min(0.1, Math.max(0, v.t - lastT)); lastT = v.t;
     duck += ((p.ducking ? 1 : 0) - duck) * Math.min(1, dt * DUCK_SPEED);     // 0 = standing, 1 = fully ducked
     neck.rotation.x = DUCK_ANGLE * duck;
     neck.position.y = 20 + (running ? Math.abs(run) * 1.5 : 0);
@@ -200,6 +287,12 @@ export function createThree(canvas2d, stage) {
 
   return {
     name: 'three', cam, defaults: THREE_DEFAULTS, sliders: SLIDERS,
+    // what the picker cycles through: every theme, then Auto
+    themes: [...THEME_ORDER.map(id => ({ id, label: THEMES[id].label, accent: THEMES[id].edge })), { id: AUTO.id, label: AUTO.label }],
+    get theme() { return choice; },                  // the picked id, or 'auto'
+    get current() { return { id: targetId, label: THEMES[targetId].label, accent: THEMES[targetId].edge }; },   // what's showing (or fading in)
+    set onThemeChange(fn) { onThemeChange = fn; },
+    setTheme,
     activate() { canvas.classList.remove('hidden'); },
     deactivate() { canvas.classList.add('hidden'); },
     draw,

@@ -36,3 +36,9 @@ canvas#c { touch-action: none; }      /* the 2D canvas stays on top: it draws th
 #camPanel input[type=range] { width: 100%; accent-color: #5ef2c8; }
 #camPanel output { text-align: right; color: #8c82c8; }
 #camPanel button { margin-top: 2px; font: inherit; color: #e8e4ff; background: #3a2a7a; border: 0; border-radius: 6px; padding: 5px; cursor: pointer; }
+
+/* theme toggle (switches to the three.js look first if needed) */
+#themeBtn { position: fixed; left: 12px; top: 12px; z-index: 5; display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+            font: 13px monospace; color: #e8e4ff; background: rgba(42, 22, 80, 0.85); border: 0; border-radius: 8px; cursor: pointer; }
+#themeBtn:hover { background: rgba(58, 42, 122, 0.95); }
+#themeBtn i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }

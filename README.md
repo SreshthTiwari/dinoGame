@@ -39,7 +39,9 @@ Plank mode only has gates (no spikes), so there is no jumping. Numbers are in `P
 
 ## Looks
 
-Two renderers share the same game: fake 3D (the 2D canvas with perspective drawn by hand) and real 3D (three.js, a chase camera behind the dino). Press R to switch; the choice is remembered, and `?render=three` or `?render=fake3d` in the URL overrides it. The sliders in the bottom-left move the camera (each look has its own, saved separately); H hides them.
+Two renderers share the same game: fake 3D (the 2D canvas with perspective drawn by hand) and real 3D (three.js, a chase camera behind the dino). Real 3D is the default. Press R to switch; a choice you make is remembered, and `?render=three` or `?render=fake3d` in the URL overrides it. The sliders in the bottom-left move the camera (each look has its own, saved separately); H hides them.
+
+The three.js look has colour themes (Neon Night, Sunset Drive, Sunny Day, Desert Dusk, Arctic, Candy Land, Matrix). Click the button in the top-left or press T to cycle; the choice is remembered. The last stop in the cycle is **Auto**, which changes the world as you play: a new theme every 20 seconds of a run, cross-fading over 2.5 seconds, in the order above and then around again (`AUTO` in `themes.js`). To make your own theme, add an entry to `js/render/themes.js`.
 
 ## Difficulty
 
@@ -58,6 +60,7 @@ The run gets harder as it goes: over 150 seconds the road speeds up from 300 to 
 | Keyboard only | Esc |
 | Show/hide camera preview | V |
 | Switch look: fake 3D / real 3D (three.js) | R |
+| Change colour theme (three.js look) | T, or the button top-left |
 | Show/hide the camera sliders | H |
 | Show live jump/duck/hand numbers on the preview | D |
 
@@ -66,7 +69,7 @@ Touch: swipe up = jump, down = duck, left/right = lane, tap = jump.
 ## Layout
 
 - `js/game.js` game logic (no drawing); `getView()` hands renderers a snapshot of the frame
-- `js/render/fake3d.js` the 2D canvas with hand-made perspective (default); `js/render/three.js` real 3D with three.js, loaded only when selected; `js/render/hud.js` score and title text shared by both
+- `js/render/fake3d.js` the 2D canvas with hand-made perspective; `js/render/three.js` real 3D with three.js (the default, loaded on demand); `js/render/themes.js` colour themes for the three.js look (pure data: sky, road, dino, obstacles, lighting); `js/render/hud.js` score and title text shared by both
 - `js/input/keyboard.js` keyboard + touch
 - `js/input/pose.js` webcam + MediaPipe
 - `js/input/gestures.js` landmarks to lane / jump / duck, calibration (thresholds in `CONFIG`)

@@ -1,6 +1,8 @@
 // Score, level and the start / game-over text, drawn on the 2D canvas over whichever renderer is active.
 export function drawHud(ctx, v) {
   const { W, state, plank } = v;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.65)'; ctx.shadowBlur = 6;     // keeps the text readable on bright themes
   ctx.fillStyle = '#e8e4ff'; ctx.font = 'bold 20px monospace'; ctx.textAlign = 'right';
   ctx.fillText(String(Math.floor(v.score)).padStart(5, '0'), W - 16, 30);
   ctx.fillStyle = '#8c82c8'; ctx.textAlign = 'left';
@@ -27,4 +29,5 @@ export function drawHud(ctx, v) {
     ctx.fillStyle = '#ff5d8f'; ctx.font = 'bold 40px monospace'; ctx.fillText('ZAPPED', W / 2, 240);
     ctx.fillStyle = '#8c82c8'; ctx.font = '16px monospace'; ctx.fillText('space to retry', W / 2, 275);
   }
+  ctx.restore();
 }

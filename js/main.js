@@ -27,15 +27,17 @@ game.setPlank(plankMode);
 const camPanel = createCameraPanel();
 
 // Renderers: 'fake3d' (2D canvas with hand-made perspective) and 'three' (real 3D, loaded on demand).
-// R switches; the choice is remembered, and ?render=three or ?render=fake3d overrides it.
+// Real 3D is the default. R switches; a choice you make is remembered, and ?render=three or
+// ?render=fake3d overrides it. (Only an explicit switch is saved, never the default.)
 const stage = document.getElementById('stage');
 const renderers = { fake3d: createFake3D(canvas) };
 let renderer = renderers.fake3d;
-async function setRenderer(name) {
+async function setRenderer(name, remember = false) {
   if (!renderers[name]) {
     try {
       const { createThree } = await import('./render/three.js');
       renderers[name] = createThree(canvas, stage);
+      renderers[name].onThemeChange = () => { if (renderer === renderers[name]) showTheme(); };
     } catch (err) {
       console.error(err);
       ui.toast('Could not start the three.js renderer (see console)');
@@ -46,12 +48,42 @@ async function setRenderer(name) {
   renderer = renderers[name];
   renderer.activate();
   camPanel.setRenderer(renderer);
-  try { localStorage.setItem('blip-renderer', name); } catch {}
+  showTheme();
+  if (remember) try { localStorage.setItem('blip-renderer-choice', name); } catch {}
 }
+// Theme button (also the T key): cycles the colour theme. Themes only exist in the three.js look,
+// so on the fake-3D look the button says so and switches to three.js when pressed.
+const themeBtn = document.getElementById('themeBtn');
+function showTheme() {
+  const list = renderer.themes;
+  themeBtn.replaceChildren();
+  const dot = document.createElement('i');
+  if (!list) {
+    dot.style.background = '#8c82c8';
+    themeBtn.append(dot, 'Fake 3D - click for real 3D + themes (T)');
+    return;
+  }
+  const auto = renderer.theme === 'auto', now = renderer.current;      // in auto, show the world that's playing
+  dot.style.background = now.accent;
+  themeBtn.append(dot, `${auto ? 'Auto: ' : ''}${now.label}  (T)`);
+}
+async function cycleTheme() {
+  if (!renderer.themes) {
+    await setRenderer('three', true);
+    if (!renderer.themes) return;                    // three.js failed to start (toast already shown)
+    return ui.toast('Real 3D - press T to change theme');
+  }
+  const list = renderer.themes;
+  const i = list.findIndex(t => t.id === renderer.theme);
+  renderer.setTheme(list[(i + 1) % list.length].id);
+  showTheme();
+}
+themeBtn.addEventListener('click', () => { cycleTheme(); themeBtn.blur(); });
 {
   let want = new URLSearchParams(location.search).get('render');
-  try { want ??= localStorage.getItem('blip-renderer'); } catch {}
-  setRenderer(want === 'three' ? 'three' : 'fake3d');
+  try { want ??= localStorage.getItem('blip-renderer-choice'); } catch {}
+  showTheme();
+  setRenderer(want === 'fake3d' ? 'fake3d' : 'three');
 }
 attachKeyboard(canvas, game);
 
@@ -123,9 +155,10 @@ addEventListener('keydown', e => {
   }
   if (e.code === 'KeyV') ui.toggleMini();
   if (e.code === 'KeyH') camPanel.toggle();
+  if (e.code === 'KeyT') cycleTheme();
   if (e.code === 'KeyR') {
     const next = renderer.name === 'fake3d' ? 'three' : 'fake3d';
-    setRenderer(next).then(() => ui.toast(next === 'three' ? 'three.js 3D' : 'Fake 3D'));
+    setRenderer(next, true).then(() => ui.toast(next === 'three' ? 'three.js 3D' : 'Fake 3D'));
   }
   if (e.code === 'KeyD') debug = !debug;
 });

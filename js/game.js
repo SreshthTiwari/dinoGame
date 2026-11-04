@@ -15,6 +15,9 @@ const GAP_START = 2.0, GAP_END = 1.1;             // seconds between obstacle ro
 const EXTRA_START = 1.0, EXTRA_END = 0.5;         // ...plus a random 0..this extra
 const TWO_LANE_START = 0.1, TWO_LANE_END = 0.3;   // chance a row blocks two lanes at once
 const lerp = (a, b, d) => a + (b - a) * d;
+// The difficulty slider: a multiplier on the road speed (1 = the normal ramp above). Faster means
+// less time to react to everything, and more score per second.
+export const SPEED_SCALE = { min: 0.5, max: 2, step: 0.05, normal: 1 };
 
 // What a row can contain (weights). 'block' is low (crystals / rocks): hop it, or dodge it.
 // 'beam' is overhead (gate / laser): duck it. 'pillar' is tall: it can only be dodged by changing
@@ -60,6 +63,7 @@ export function createGame(canvas, { canStart = () => true } = {}) {
   let state = 'start', player, obstacles, pickups, score, speed, spawnIn, t = 0, scroll = 0;
   let shield = false, ghostT = 0, graceT = 0, shieldBreakT = -1, pickupIn = PICKUP_FIRST;   // powerup state
   let sinceBreak = 0, breather = null;                                                      // breather: { t } while one is running
+  let speedScale = SPEED_SCALE.normal, speedNow = speedScale;   // the slider's value, and the eased value actually in use
   let elapsed = 0, phase = 0;          // seconds into the run; run-cycle phase (advances faster as the dino speeds up)
   let best = +(localStorage.getItem('blip-td-best') || 0);
   const duckSources = {};              // keyboard and pose each hold their own duck flag
@@ -112,6 +116,7 @@ export function createGame(canvas, { canStart = () => true } = {}) {
   function setJumpHeld(held, source = 'keys') { jumpSources[source] = held; }
   const isPlaying = () => state === 'play';
   function setPlank(on) { plank = on; }
+  function setSpeedScale(k) { speedScale = Math.max(SPEED_SCALE.min, Math.min(SPEED_SCALE.max, +k || SPEED_SCALE.normal)); }
 
   const ducking = () => player.z === 0 && (duckHeld() || player.duckT > 0);
 
@@ -130,7 +135,7 @@ export function createGame(canvas, { canStart = () => true } = {}) {
     if (pickupIn <= 0) {
       let type = choose(POWERUPS);
       if (type === 'shield' && shield) type = 'ghost';             // no point offering a second shield
-      pickups.push({ lane: lanes[rowLanes.length], y: SPAWN_Y - 0.5 * spawnIn * dif.speed, type });
+      pickups.push({ lane: lanes[rowLanes.length], y: SPAWN_Y - 0.5 * spawnIn * dif.speed * speedNow, type });
       pickupIn = lerp(PICKUP_EVERY[0], PICKUP_EVERY[1], Math.random());
     }
   }
@@ -161,7 +166,8 @@ export function createGame(canvas, { canStart = () => true } = {}) {
 
     phase += wdt * speed / START_SPEED;
     elapsed += wdt;
-    speed = difficultyAt(elapsed).speed;
+    speedNow += (speedScale - speedNow) * Math.min(1, dt * 4);        // eases, so moving the slider mid-run doesn't jerk
+    speed = difficultyAt(elapsed).speed * speedNow;
     scroll += speed * wdt;
 
     const hadGhost = ghostT > 0;
@@ -217,7 +223,7 @@ export function createGame(canvas, { canStart = () => true } = {}) {
   // Everything a renderer needs to draw the current frame (read-only snapshot).
   function getView() {
     return {
-      W, H, state, plank, t, scroll, phase, speed, elapsed, score, best,
+      W, H, state, plank, t, scroll, phase, speed, speedScale: speedNow, elapsed, score, best,
       level: difficultyAt(elapsed).level, obstacles, pickups,
       player: { x: player.x, z: player.z, lane: player.lane, ducking: ducking() },
       shield, ghost: ghostT, shieldBreakT,                       // powerups: shield on/off, ghost seconds left, when a shield last popped
@@ -225,5 +231,5 @@ export function createGame(canvas, { canStart = () => true } = {}) {
     };
   }
 
-  return { on, update, getView, start, jump, move, setLane, duckFor, setDuckHeld, setJumpHeld, setPlank, isPlaying };
+  return { on, update, getView, setSpeedScale, start, jump, move, setLane, duckFor, setDuckHeld, setJumpHeld, setPlank, isPlaying };
 }

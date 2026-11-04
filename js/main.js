@@ -1,4 +1,4 @@
-import { createGame, PY } from './game.js';
+import { createGame, PY, SPEED_SCALE } from './game.js';
 import { createAudio } from './audio.js';
 import { attachKeyboard } from './input/keyboard.js';
 import { createPose } from './input/pose.js';
@@ -71,6 +71,19 @@ function showSound() { audioBtn.textContent = `${SOUND_LABELS[audio.mode]}  (M)`
 function cycleSound() { audio.unlock(); audio.cycleMode(); showSound(); }
 audioBtn.addEventListener('click', () => { cycleSound(); audioBtn.blur(); });
 showSound();
+
+// Difficulty slider: a multiplier on the road speed. The value is remembered.
+const speedSlider = document.getElementById('speedSlider'), speedVal = document.getElementById('speedVal');
+Object.assign(speedSlider, { min: SPEED_SCALE.min, max: SPEED_SCALE.max, step: SPEED_SCALE.step });
+try { speedSlider.value = localStorage.getItem('blip-speed') ?? SPEED_SCALE.normal; } catch { speedSlider.value = SPEED_SCALE.normal; }
+function applySpeed() {
+  game.setSpeedScale(speedSlider.value);
+  speedVal.textContent = `x${(+speedSlider.value).toFixed(2).replace(/0$/, '')}`;
+  try { localStorage.setItem('blip-speed', speedSlider.value); } catch {}
+}
+speedSlider.addEventListener('input', applySpeed);
+speedSlider.addEventListener('change', () => speedSlider.blur());      // so arrow keys / space go back to the game
+applySpeed();
 
 // Game events -> sound and hit effects
 const fx = renderer.fx;

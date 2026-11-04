@@ -20,6 +20,7 @@
 - [ ] Better dino model (it is knocked over on death now, but a proper tumble animation would be better)
 - [ ] Obstacle shadows and speed lines as the game gets faster
 - [ ] Upper-body mode: work with only part of the body in view, so it doesn't need your feet
-- [ ] Difficulty slider and a simple settings screen, so nothing depends on keyboard shortcuts
+- [x] Difficulty slider (road speed multiplier, x0.5 to x2)
+- [ ] A simple settings screen, so nothing depends on keyboard shortcuts
 - [ ] Squat-before-jump problem (standing mode): crouching to jump shouldn't register as a duck
 - [ ] Saved test suite for the gesture logic (plank and standing), so tuning is safer

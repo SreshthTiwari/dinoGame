@@ -78,6 +78,8 @@ Every 60 seconds of play the world eases down to 55% speed for 10 seconds, a sho
 
 The run gets harder as it goes: over 150 seconds the road speeds up from 300 to 600 px/s, obstacles come closer together, and double-lane rows get more common (LV 1 to LV 10 shown at the top). The dino's legs and tail speed up with it. The numbers are at the top of `js/game.js`.
 
+The **Difficulty** slider (top-left, under the sound button) multiplies the road speed from x0.5 to x2 (x1 is the ramp described above). It changes smoothly even mid-run, the dino's legs and tail speed up with it, and your setting is remembered. Faster also means more score per second, so high scores from different settings aren't directly comparable. The range is `SPEED_SCALE` at the top of `js/game.js`.
+
 ## Keys
 
 | Action | Keys |

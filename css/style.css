@@ -46,3 +46,9 @@ canvas#c { touch-action: none; }      /* the 2D canvas stays on top: it draws th
 
 /* hit flash: a colour wash over the game that fades out (see flash() in three.js) */
 #flash { position: absolute; inset: 0; opacity: 0; pointer-events: none; z-index: 2; mix-blend-mode: screen; }
+
+/* difficulty slider (road speed) */
+#speedBox { position: fixed; left: 12px; top: 96px; z-index: 5; display: grid; grid-template-columns: auto 110px 44px; align-items: center; gap: 8px;
+            padding: 8px 12px; font: 13px monospace; color: #e8e4ff; background: rgba(42, 22, 80, 0.85); border-radius: 8px; }
+#speedBox input { width: 100%; accent-color: #ffd35e; }
+#speedBox output { text-align: right; color: #ffd35e; }
